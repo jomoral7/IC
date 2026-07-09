@@ -391,12 +391,13 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
   async function submit() {
     if (!supabase) return;
     setError("");
+    const loginEmail = normalizeLogin(email);
     if (mode === "login") {
-      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (loginError) setError(loginError.message);
       return;
     }
-    const { data, error: signupError } = await supabase.auth.signUp({ email, password });
+    const { data, error: signupError } = await supabase.auth.signUp({ email: loginEmail, password });
     if (signupError) {
       setError(signupError.message);
       return;
@@ -421,7 +422,7 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
         <h1>{mode === "login" ? "Entrar al sistema" : "Crear primer usuario"}</h1>
         <p>Inventario, POS, facturacion y Kardex conectados a Supabase.</p>
         {mode === "signup" && <label>Nombre<input value={name} onChange={(event) => setName(event.target.value)} /></label>}
-        <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label>Usuario o email<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="jomorales" /></label>
         <label>Contrasena<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         {error && <div className="error-box">{error}</div>}
         <button className="primary-button wide" onClick={submit}>{mode === "login" ? "Entrar" : "Crear cuenta"}</button>
@@ -429,6 +430,11 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
       </div>
     </LoginScreen>
   );
+}
+
+function normalizeLogin(value: string) {
+  const trimmed = value.trim();
+  return trimmed.includes("@") ? trimmed : `${trimmed}@inversionesdelcaribe.com`;
 }
 
 function Dashboard({ products, documents, lowStock, setSelectedModule }: { products: Product[]; documents: any[]; lowStock: Product[]; setSelectedModule: (module: ModuleName) => void }) {
