@@ -276,8 +276,11 @@ export function App() {
 function BrandMark() {
   return (
     <div className="brandmark" aria-label="Inversiones del Caribe">
-      <span>Inversiones</span>
-      <strong>Del Caribe<i>.</i></strong>
+      <img src="/brand/ic-02.svg" alt="" aria-hidden="true" />
+      <div>
+        <span>Inversiones</span>
+        <strong>Del Caribe<i>.</i></strong>
+      </div>
     </div>
   );
 }
