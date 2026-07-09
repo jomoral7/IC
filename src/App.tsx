@@ -27,6 +27,7 @@ import {
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
@@ -47,11 +48,20 @@ type Product = {
   real_cost: number;
   sale_price: number;
   supplier_id: string | null;
+  brand: string | null;
+  size: string | null;
+  color: string | null;
+  gender: string | null;
+  season: string | null;
+  internal_code: string | null;
+  qr_payload: string | null;
   active: boolean;
   stock: number;
 };
 type ProductForm = Omit<Product, "id" | "active" | "stock"> & { stock: number };
 type CartLine = Product & { qty: number };
+type UserProfile = { id: string; full_name: string; username: string | null; role: string; active: boolean };
+type AdjustmentDraft = { product: Product; quantity: number; reason: string; notes: string };
 
 const modules = [
   { label: "Dashboard", icon: BarChart3 },
@@ -64,6 +74,7 @@ const modules = [
   { label: "Vendedores", icon: UserRound },
   { label: "Clientes", icon: Users },
   { label: "Proveedores", icon: Truck },
+  { label: "Usuarios", icon: Users },
   { label: "Reportes", icon: FileSpreadsheet },
 ] as const;
 
@@ -78,6 +89,13 @@ const emptyProduct: ProductForm = {
   real_cost: 0,
   sale_price: 0,
   supplier_id: null,
+  brand: "",
+  size: "",
+  color: "",
+  gender: "Unisex",
+  season: "",
+  internal_code: "",
+  qr_payload: "",
   stock: 0,
 };
 
@@ -92,6 +110,7 @@ export function App() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [kardex, setKardex] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
@@ -115,7 +134,7 @@ export function App() {
   async function loadWorkspace() {
     if (!supabase) return;
     setLoading(true);
-    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes] = await Promise.all([
+    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes] = await Promise.all([
       supabase.from("products").select("*").eq("active", true).order("name"),
       supabase.from("stock_levels").select("product_id, quantity, location_id"),
       supabase.from("parties").select("id, name, kind").eq("kind", "supplier").order("name"),
@@ -123,6 +142,7 @@ export function App() {
       supabase.from("inventory_locations").select("id, name").order("name"),
       supabase.from("documents").select("*").order("created_at", { ascending: false }).limit(50),
       supabase.from("inventory_kardex").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase.from("profiles").select("id, full_name, username, role, active").order("full_name"),
     ]);
 
     if (productRes.error) setNotice(productRes.error.message);
@@ -133,6 +153,7 @@ export function App() {
     setLocations((locationRes.data ?? []) as Location[]);
     setDocuments(documentRes.data ?? []);
     setKardex(kardexRes.data ?? []);
+    setUsers((userRes.data ?? []) as UserProfile[]);
     setLoading(false);
   }
 
@@ -147,17 +168,25 @@ export function App() {
 
   async function saveProduct(form: ProductForm, id?: string) {
     if (!supabase) return;
+    const generatedCode = form.internal_code || await nextInternalCode();
     const payload = {
-      sku: form.sku.trim(),
+      sku: (form.sku || generatedCode).trim(),
       name: form.name.trim(),
       category: form.category.trim(),
-      barcode: form.barcode || null,
+      barcode: form.barcode || generatedCode,
       min_stock: Number(form.min_stock),
       cost: Number(form.real_cost || form.cost),
       price: Number(form.sale_price || form.price),
       real_cost: Number(form.real_cost || form.cost),
       sale_price: Number(form.sale_price || form.price),
       supplier_id: form.supplier_id || null,
+      brand: form.brand || null,
+      size: form.size || null,
+      color: form.color || null,
+      gender: form.gender || null,
+      season: form.season || null,
+      internal_code: generatedCode,
+      qr_payload: form.qr_payload || generatedCode,
       active: true,
     };
     const location = await ensureLocation();
@@ -170,6 +199,23 @@ export function App() {
     }
     await supabase.from("stock_levels").upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
     setNotice("Producto guardado");
+    await loadWorkspace();
+  }
+
+  async function nextInternalCode() {
+    if (!supabase) return `IC-${Date.now().toString().slice(-6)}`;
+    const { data } = await supabase.rpc("next_product_internal_code");
+    return data ?? `IC-${Date.now().toString().slice(-6)}`;
+  }
+
+  async function createUser(payload: { username: string; password: string; full_name: string; role: string }) {
+    if (!supabase) return;
+    const { data, error } = await supabase.functions.invoke("admin-create-user", { body: payload });
+    if (error || data?.error) {
+      setNotice(data?.error ?? error?.message ?? "No se pudo crear usuario");
+      return;
+    }
+    setNotice("Usuario creado");
     await loadWorkspace();
   }
 
@@ -304,7 +350,7 @@ export function App() {
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     pdf.setTextColor("#667782");
-    pdf.text(`No. ${number} · ${new Date().toLocaleDateString("es-HN")}`, 420, 82);
+    pdf.text(`No. ${number} - ${new Date().toLocaleDateString("es-HN")}`, 420, 82);
     pdf.setDrawColor("#14384C");
     pdf.line(56, 135, 556, 135);
     let y = 164;
@@ -331,7 +377,16 @@ export function App() {
     await supabase?.auth.signOut();
   }
 
-  const filteredProducts = products.filter((product) => [product.sku, product.name, product.category].join(" ").toLowerCase().includes(query.toLowerCase()));
+  const filteredProducts = products.filter((product) => [
+    product.sku,
+    product.internal_code,
+    product.qr_payload,
+    product.name,
+    product.category,
+    product.brand,
+    product.size,
+    product.color,
+  ].join(" ").toLowerCase().includes(query.toLowerCase()));
   const lowStock = products.filter((product) => product.stock <= product.min_stock);
   const cartTotal = cart.reduce((sum, line) => sum + line.qty * line.sale_price, 0);
 
@@ -367,15 +422,16 @@ export function App() {
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>Cerrar</button></div>}
         {selectedModule === "Dashboard" && <Dashboard products={products} documents={documents} lowStock={lowStock} setSelectedModule={setSelectedModule} />}
         {selectedModule === "POS" && <POS products={filteredProducts} cart={cart} setCart={setCart} addToCart={addToCart} customers={customers} issueSale={issueSale} total={cartTotal} />}
-        {selectedModule === "Inventario" && <Inventory products={filteredProducts} suppliers={suppliers} saveProduct={saveProduct} deleteProduct={deleteProduct} createStockRequest={createStockRequest} />}
+        {selectedModule === "Inventario" && <Inventory products={filteredProducts} suppliers={suppliers} saveProduct={saveProduct} deleteProduct={deleteProduct} createStockRequest={createStockRequest} registerAdjustment={registerAdjustment} />}
         {selectedModule === "Stock bajo" && <LowStock products={lowStock} createStockRequest={createStockRequest} />}
         {selectedModule === "Ajustes" && <Adjustments products={products} registerAdjustment={registerAdjustment} />}
         {selectedModule === "Facturas" && <Invoices documents={documents} />}
         {selectedModule === "Kardex" && <Kardex rows={kardex} />}
         {selectedModule === "Clientes" && <Parties rows={customers} title="Clientes" />}
         {selectedModule === "Proveedores" && <Parties rows={suppliers} title="Proveedores" />}
+        {selectedModule === "Usuarios" && <UsersAdmin users={users} createUser={createUser} />}
         {selectedModule === "Reportes" && <Reports products={products} documents={documents} kardex={kardex} exportExcel={exportExcel} />}
-        {selectedModule === "Vendedores" && <EmptyWork title="Vendedores y comisiones" text="El modelo de vendedores y reglas ya existe en Supabase. El siguiente paso es el CRUD de vendedores y liquidacion de comisiones." />}
+        {selectedModule === "Vendedores" && <EmptyWork title="Vendedores y comisiones" text="El modelo esta listo; falta enlazar liquidacion automatica al cierre de venta." />}
       </main>
     </div>
   );
@@ -384,33 +440,16 @@ export function App() {
 function AuthScreen({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [mode, setMode] = useState<"login" | "signup">("login");
   const [error, setError] = useState("");
 
   async function submit() {
     if (!supabase) return;
     setError("");
     const loginEmail = normalizeLogin(email);
-    if (mode === "login") {
-      const { error: loginError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
-      if (loginError) setError(loginError.message);
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+    if (loginError) {
+      setError(loginError.message);
       return;
-    }
-    const { data, error: signupError } = await supabase.auth.signUp({ email: loginEmail, password });
-    if (signupError) {
-      setError(signupError.message);
-      return;
-    }
-    if (data.user) {
-      const adminProfile = await supabase.from("profiles").insert({ id: data.user.id, full_name: name || email, role: "admin" });
-      if (adminProfile.error) {
-        await supabase.from("profiles").insert({ id: data.user.id, full_name: name || email, role: "sales" });
-      }
-      if (!data.session) {
-        setError("Usuario creado. Revisa si Supabase pide confirmar el correo antes de entrar.");
-        return;
-      }
     }
     onDone();
   }
@@ -419,14 +458,12 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
     <LoginScreen>
       <div className="auth-card">
         <BrandMark />
-        <h1>{mode === "login" ? "Entrar al sistema" : "Crear primer usuario"}</h1>
-        <p>Inventario, POS, facturacion y Kardex conectados a Supabase.</p>
-        {mode === "signup" && <label>Nombre<input value={name} onChange={(event) => setName(event.target.value)} /></label>}
+        <h1>Entrar al sistema</h1>
+        <p>Los usuarios se crean desde el modulo Usuarios. No hay registro publico.</p>
         <label>Usuario o email<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="jomorales" /></label>
         <label>Contrasena<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         {error && <div className="error-box">{error}</div>}
-        <button className="primary-button wide" onClick={submit}>{mode === "login" ? "Entrar" : "Crear cuenta"}</button>
-        <button className="link-button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Crear usuario inicial" : "Ya tengo usuario"}</button>
+        <button className="primary-button wide" onClick={submit}>Entrar</button>
       </div>
     </LoginScreen>
   );
@@ -462,60 +499,145 @@ function POS({ products, cart, setCart, addToCart, customers, issueSale, total }
   return (
     <section className="pos-workspace">
       <section className="catalog-panel">
-        <div className="panel-heading"><div><p className="section-label">Productos</p><h2>Agregar al ticket</h2></div></div>
-        {products.length === 0 ? <EmptyWork title="Sin productos" text="Crea productos en Inventario para vender desde POS." /> : <div className="catalog-list">{products.map((product) => <button key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}><strong>{product.name}</strong><span>{product.sku} · Stock {product.stock}</span><b>L {product.sale_price.toLocaleString("es-HN")}</b></button>)}</div>}
+        <div className="pos-table-head"><span>Producto</span><span>Stock</span><span>Precio</span></div>
+        {products.length === 0 ? <EmptyWork title="Sin productos" text="Crea productos en Inventario para vender desde POS." /> : (
+          <div className="catalog-list">
+            {products.map((product) => (
+              <button key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}>
+                <div>
+                  <strong>{product.name}</strong>
+                  <span>{product.internal_code ?? product.sku} · {product.size || "Sin talla"} · {product.color || "Sin color"}</span>
+                </div>
+                <em className={product.stock <= product.min_stock ? "stock-alert" : ""}>{product.stock} disp.</em>
+                <b>L {product.sale_price.toLocaleString("es-HN")}</b>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
-      <section className="ticket-panel">
-        <div className="panel-heading"><div><p className="section-label">Venta</p><h2>Ticket actual</h2></div><button className="secondary-button" onClick={() => setCart([])}>Limpiar</button></div>
+      <aside className="sale-summary">
+        <div className="sale-summary-head"><h2>Resumen de venta</h2><span>{cart.length} items</span></div>
+        <label>Cliente<select value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">Cliente final</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
+        <div className="payment-toggle"><button className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>Contado</button><button className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Credito</button></div>
         <div className="ticket-list editable">
-          {cart.map((line) => <div className="ticket-line" key={line.id}><div><strong>{line.name}</strong><span>L {line.sale_price} · Stock {line.stock}</span></div><input type="number" min={1} max={line.stock} value={line.qty} onChange={(event) => setCart(cart.map((item) => item.id === line.id ? { ...item, qty: Number(event.target.value) } : item))} /><b>L {(line.qty * line.sale_price).toLocaleString("es-HN")}</b><button onClick={() => setCart(cart.filter((item) => item.id !== line.id))}><X size={16} /></button></div>)}
+          {cart.length === 0 && <EmptyWork title="Carrito vacio" text="Selecciona productos del listado para facturar." />}
+          {cart.map((line) => (
+            <div className="ticket-line" key={line.id}>
+              <div><strong>{line.name}</strong><span>{line.internal_code ?? line.sku}</span></div>
+              <input type="number" min={1} max={line.stock} value={line.qty} onChange={(event) => setCart(cart.map((item) => item.id === line.id ? { ...item, qty: Number(event.target.value) } : item))} />
+              <b>L {(line.qty * line.sale_price).toLocaleString("es-HN")}</b>
+              <button onClick={() => setCart(cart.filter((item) => item.id !== line.id))}><X size={16} /></button>
+            </div>
+          ))}
         </div>
-        <div className="total-box"><span>Total</span><strong>L {total.toLocaleString("es-HN")}</strong></div>
-      </section>
-      <section className="checkout-panel">
-        <p className="section-label">Cobro</p>
-        <h2>Emitir factura</h2>
-        <label>Cliente opcional<select value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">Cliente final</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
-        <label>Condicion<select value={terms} onChange={(event) => setTerms(event.target.value as "cash" | "credit")}><option value="cash">Contado</option><option value="credit">Credito</option></select></label>
-        <button className="primary-button wide" disabled={cart.length === 0} onClick={() => void issueSale(customerId || null, terms)}><FileText size={18} /> Facturar y descargar PDF</button>
-      </section>
+        <div className="total-box"><span>Total neto</span><strong>L {total.toLocaleString("es-HN")}</strong></div>
+        <button className="primary-button wide" disabled={cart.length === 0} onClick={() => void issueSale(customerId || null, terms)}><FileText size={18} /> Generar factura</button>
+        <button className="secondary-button wide" onClick={() => setCart([])}>Limpiar venta</button>
+      </aside>
     </section>
   );
 }
 
-function Inventory({ products, suppliers, saveProduct, deleteProduct, createStockRequest }: { products: Product[]; suppliers: Party[]; saveProduct: (form: ProductForm, id?: string) => Promise<void>; deleteProduct: (product: Product) => Promise<void>; createStockRequest: (product: Product) => Promise<void> }) {
+function Inventory({ products, suppliers, saveProduct, deleteProduct, createStockRequest, registerAdjustment }: { products: Product[]; suppliers: Party[]; saveProduct: (form: ProductForm, id?: string) => Promise<void>; deleteProduct: (product: Product) => Promise<void>; createStockRequest: (product: Product) => Promise<void>; registerAdjustment: (productId: string, quantityDelta: number, reason: string, notes: string) => Promise<void> }) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
+  const [filter, setFilter] = useState<"all" | "low">("all");
+  const [adjusting, setAdjusting] = useState<Product | null>(null);
+  const visibleProducts = filter === "low" ? products.filter((product) => product.stock <= product.min_stock) : products;
+  const units = products.reduce((sum, product) => sum + product.stock, 0);
   return (
     <>
       <section className="panel full-panel">
-        <div className="panel-heading"><div><p className="section-label">Catalogo</p><h2>Productos</h2></div><button className="primary-button" onClick={() => setCreating(true)}><Plus size={17} /> Nuevo producto</button></div>
-        {products.length === 0 ? <EmptyWork title="No hay productos" text="Agrega el primer producto con costo real, precio de venta, minimo y stock inicial." /> : <DataTable headers={["SKU", "Producto", "Stock", "Min", "Costo", "Venta", "Acciones"]} rows={products.map((product) => [product.sku, <><strong>{product.name}</strong><span>{product.category}</span></>, product.stock, product.min_stock, `L ${product.real_cost}`, `L ${product.sale_price}`, <div className="row-actions"><button onClick={() => setEditing(product)}><Edit3 size={15} />Editar</button><button onClick={() => setQrProduct(product)}><QrCode size={15} />QR</button><button onClick={() => void createStockRequest(product)}><PackagePlus size={15} />Pedir</button><button className="danger" onClick={() => void deleteProduct(product)}><Trash2 size={15} />Eliminar</button></div>])} />}
+        <div className="panel-heading inventory-heading">
+          <div>
+            <p className="section-label">Gestion completa</p>
+            <h2>Inventario de ropa</h2>
+            <div className="pill-row"><span>{products.length} referencias</span><span>{units} unidades</span></div>
+          </div>
+          <button className="primary-button" onClick={() => setCreating(true)}><Plus size={17} /> Nuevo producto</button>
+        </div>
+        <div className="filterbar">
+          <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Todos</button>
+          <button className={filter === "low" ? "active" : ""} onClick={() => setFilter("low")}><AlertTriangle size={15} /> Stock bajo</button>
+        </div>
+        {visibleProducts.length === 0 ? <EmptyWork title="No hay productos" text="Agrega el primer producto con costo real, precio de venta, minimo y stock inicial." /> : <DataTable headers={["#", "Producto", "Variante", "Stock actual", "Precio venta", "Acciones"]} rows={visibleProducts.map((product, index) => [
+          index + 1,
+          <><strong>{product.name}</strong><span>{product.internal_code ?? product.sku}</span></>,
+          <><strong>{[product.brand, product.category].filter(Boolean).join(" / ") || "Ropa"}</strong><span>{[product.size, product.color, product.gender].filter(Boolean).join(" - ") || "Sin variante"}</span></>,
+          <><strong className={product.stock <= product.min_stock ? "stock-alert" : ""}>{product.stock}</strong><span>Min: {product.min_stock}</span></>,
+          `L ${product.sale_price.toLocaleString("es-HN")}`,
+          <div className="row-actions">
+            <button title="Editar" onClick={() => setEditing(product)}><Edit3 size={15} /></button>
+            <button title="QR" onClick={() => setQrProduct(product)}><QrCode size={15} /></button>
+            <button title="Ajustar stock" onClick={() => setAdjusting(product)}><RotateCcw size={15} /></button>
+            <button title="Pedir" onClick={() => void createStockRequest(product)}><PackagePlus size={15} /></button>
+            <button title="Eliminar" className="danger" onClick={() => void deleteProduct(product)}><Trash2 size={15} /></button>
+          </div>,
+        ])} />}
       </section>
       {(creating || editing) && <ProductDrawer product={editing} suppliers={suppliers} onClose={() => { setCreating(false); setEditing(null); }} onSave={saveProduct} />}
       {qrProduct && <QrModal product={qrProduct} onClose={() => setQrProduct(null)} />}
+      {adjusting && <AdjustmentModal product={adjusting} onClose={() => setAdjusting(null)} onSave={(draft) => registerAdjustment(draft.product.id, draft.quantity, draft.reason, draft.notes)} />}
     </>
   );
 }
 
 function ProductDrawer({ product, suppliers, onClose, onSave }: { product: Product | null; suppliers: Party[]; onClose: () => void; onSave: (form: ProductForm, id?: string) => Promise<void> }) {
-  const [form, setForm] = useState<ProductForm>(product ? { sku: product.sku, name: product.name, category: product.category, barcode: product.barcode, min_stock: product.min_stock, cost: product.cost, price: product.price, real_cost: product.real_cost, sale_price: product.sale_price, supplier_id: product.supplier_id, stock: product.stock } : emptyProduct);
+  const [form, setForm] = useState<ProductForm>(product ? {
+    sku: product.sku,
+    name: product.name,
+    category: product.category,
+    barcode: product.barcode,
+    min_stock: product.min_stock,
+    cost: product.cost,
+    price: product.price,
+    real_cost: product.real_cost,
+    sale_price: product.sale_price,
+    supplier_id: product.supplier_id,
+    brand: product.brand ?? "",
+    size: product.size ?? "",
+    color: product.color ?? "",
+    gender: product.gender ?? "Unisex",
+    season: product.season ?? "",
+    internal_code: product.internal_code ?? "",
+    qr_payload: product.qr_payload ?? "",
+    stock: product.stock,
+  } : emptyProduct);
   function set<K extends keyof ProductForm>(key: K, value: ProductForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
   return (
     <div className="drawer-backdrop">
       <aside className="drawer">
-        <div className="panel-heading"><div><p className="section-label">{product ? "Editar" : "Nuevo"}</p><h2>Producto</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
-        <div className="form-grid one">
-          <label>SKU<input value={form.sku} onChange={(event) => set("sku", event.target.value)} /></label>
+        <div className="panel-heading"><div><p className="section-label">{product ? "Editar producto" : "Nuevo producto"}</p><h2>{product ? product.name : "Crear referencia"}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
+        <div className="form-section">
+          <h3>Identificacion</h3>
+          <div className="form-grid two">
+            <label>Codigo interno<input value={form.internal_code ?? ""} readOnly placeholder="Automatico al guardar" /></label>
+            <label>QR / barra<input value={form.qr_payload ?? ""} readOnly placeholder="Automatico al guardar" /></label>
+          </div>
+        </div>
+        <div className="form-section">
+          <h3>Producto</h3>
+          <div className="form-grid two">
           <label>Producto<input value={form.name} onChange={(event) => set("name", event.target.value)} /></label>
-          <label>Categoria<input value={form.category} onChange={(event) => set("category", event.target.value)} /></label>
-          <label>Codigo de barras<input value={form.barcode ?? ""} onChange={(event) => set("barcode", event.target.value)} /></label>
+            <label>Categoria<input value={form.category} onChange={(event) => set("category", event.target.value)} placeholder="Camisa, pantalon, zapato" /></label>
+            <label>Marca<input value={form.brand ?? ""} onChange={(event) => set("brand", event.target.value)} /></label>
+            <label>Talla<input value={form.size ?? ""} onChange={(event) => set("size", event.target.value)} placeholder="S, M, L, 32, 38" /></label>
+            <label>Color<input value={form.color ?? ""} onChange={(event) => set("color", event.target.value)} /></label>
+            <label>Genero<select value={form.gender ?? ""} onChange={(event) => set("gender", event.target.value)}><option>Unisex</option><option>Mujer</option><option>Hombre</option><option>Nino</option><option>Nina</option></select></label>
+          </div>
+        </div>
+        <div className="form-section">
+          <h3>Stock y precios</h3>
+          <div className="form-grid three">
           <label>Proveedor<select value={form.supplier_id ?? ""} onChange={(event) => set("supplier_id", event.target.value || null)}><option value="">Sin proveedor</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
-          <div className="split-fields"><label>Stock<input type="number" value={form.stock} onChange={(event) => set("stock", Number(event.target.value))} /></label><label>Minimo<input type="number" value={form.min_stock} onChange={(event) => set("min_stock", Number(event.target.value))} /></label></div>
-          <div className="split-fields"><label>Costo real<input type="number" value={form.real_cost} onChange={(event) => set("real_cost", Number(event.target.value))} /></label><label>Precio venta<input type="number" value={form.sale_price} onChange={(event) => set("sale_price", Number(event.target.value))} /></label></div>
+            <label>Stock<input type="number" value={form.stock} onChange={(event) => set("stock", Number(event.target.value))} /></label>
+            <label>Minimo<input type="number" value={form.min_stock} onChange={(event) => set("min_stock", Number(event.target.value))} /></label>
+            <label>Costo real<input type="number" value={form.real_cost} onChange={(event) => set("real_cost", Number(event.target.value))} /></label>
+            <label>Precio venta<input type="number" value={form.sale_price} onChange={(event) => set("sale_price", Number(event.target.value))} /></label>
+          </div>
         </div>
         <button className="primary-button wide" onClick={() => void onSave(form, product?.id).then(onClose)}><Save size={18} /> Guardar producto</button>
       </aside>
@@ -523,10 +645,32 @@ function ProductDrawer({ product, suppliers, onClose, onSave }: { product: Produ
   );
 }
 
+function AdjustmentModal({ product, onClose, onSave }: { product: Product; onClose: () => void; onSave: (draft: AdjustmentDraft) => Promise<void> }) {
+  const [quantity, setQuantity] = useState(-1);
+  const [reason, setReason] = useState("damaged");
+  const [notes, setNotes] = useState("");
+  return (
+    <div className="drawer-backdrop">
+      <div className="qr-modal adjustment-modal">
+        <button className="icon-button modal-close" onClick={onClose}><X size={18} /></button>
+        <p className="section-label">Ajuste de inventario</p>
+        <h2>{product.name}</h2>
+        <div className="form-grid one">
+          <label>Motivo<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="damaged">Danado</option><option value="return">Devolucion</option><option value="manual_count">Conteo fisico</option><option value="lost">Perdida</option></select></label>
+          <label>Cantidad +/-<input type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label>
+          <label>Notas<input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Detalle del ajuste" /></label>
+        </div>
+        <button className="primary-button wide" disabled={quantity === 0} onClick={() => void onSave({ product, quantity, reason, notes }).then(onClose)}><Save size={18} /> Registrar ajuste</button>
+      </div>
+    </div>
+  );
+}
+
 function QrModal({ product, onClose }: { product: Product; onClose: () => void }) {
   const [qr, setQr] = useState("");
-  useEffect(() => { QRCode.toDataURL(`SKU:${product.sku}|${product.name}|L${product.sale_price}`).then(setQr); }, [product]);
-  return <div className="drawer-backdrop"><div className="qr-modal"><button className="icon-button modal-close" onClick={onClose}><X size={18} /></button><p className="section-label">{product.sku}</p><h2>{product.name}</h2>{qr && <img src={qr} alt={`QR ${product.sku}`} />}<button className="secondary-button" onClick={() => window.print()}><QrCode size={18} /> Imprimir etiqueta</button></div></div>;
+  const payload = product.qr_payload ?? product.internal_code ?? product.sku;
+  useEffect(() => { QRCode.toDataURL(payload).then(setQr); }, [payload]);
+  return <div className="drawer-backdrop"><div className="qr-modal"><button className="icon-button modal-close" onClick={onClose}><X size={18} /></button><p className="section-label">{payload}</p><h2>{product.name}</h2>{qr && <img src={qr} alt={`QR ${payload}`} />}<button className="secondary-button" onClick={() => window.print()}><QrCode size={18} /> Imprimir etiqueta</button></div></div>;
 }
 
 function LowStock({ products, createStockRequest }: { products: Product[]; createStockRequest: (product: Product) => Promise<void> }) {
@@ -538,7 +682,7 @@ function Adjustments({ products, registerAdjustment }: { products: Product[]; re
   const [quantity, setQuantity] = useState(-1);
   const [reason, setReason] = useState("damaged");
   const [notes, setNotes] = useState("");
-  return <section className="panel full-panel"><div className="panel-heading"><div><p className="section-label">Inventario</p><h2>Ajuste manual</h2></div></div><div className="form-grid"><label>Producto<select value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">Seleccionar</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label><label>Motivo<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="damaged">Dañado</option><option value="return">Devolucion</option><option value="manual_count">Conteo fisico</option><option value="lost">Perdida</option></select></label><label>Cantidad +/-<input type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label></div><label>Notas<input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Detalle del ajuste" /></label><button className="primary-button" disabled={!productId || quantity === 0} onClick={() => void registerAdjustment(productId, quantity, reason, notes)}><Save size={18} /> Registrar ajuste</button></section>;
+  return <section className="panel full-panel"><div className="panel-heading"><div><p className="section-label">Inventario</p><h2>Ajuste manual</h2></div></div><div className="form-grid"><label>Producto<select value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">Seleccionar</option>{products.map((product) => <option key={product.id} value={product.id}>{product.internal_code ?? product.sku} - {product.name}</option>)}</select></label><label>Motivo<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="damaged">Danado</option><option value="return">Devolucion</option><option value="manual_count">Conteo fisico</option><option value="lost">Perdida</option></select></label><label>Cantidad +/-<input type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label></div><label>Notas<input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Detalle del ajuste" /></label><button className="primary-button" disabled={!productId || quantity === 0} onClick={() => void registerAdjustment(productId, quantity, reason, notes)}><Save size={18} /> Registrar ajuste</button></section>;
 }
 
 function Invoices({ documents }: { documents: any[] }) {
@@ -553,6 +697,53 @@ function Parties({ rows, title }: { rows: Party[]; title: string }) {
   return <section className="panel full-panel"><div className="panel-heading"><div><p className="section-label">Registro</p><h2>{title}</h2></div><button className="primary-button"><Plus size={17} /> Nuevo</button></div>{rows.length === 0 ? <EmptyWork title={`Sin ${title.toLowerCase()}`} text="El CRUD de terceros queda listo para conectar en esta tabla." /> : <DataTable headers={["Nombre", "Tipo"]} rows={rows.map((row) => [row.name, row.kind])} />}</section>;
 }
 
+function UsersAdmin({ users, createUser }: { users: UserProfile[]; createUser: (payload: { username: string; password: string; full_name: string; role: string }) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ username: "", password: "", full_name: "", role: "sales" });
+  async function submit() {
+    await createUser(form);
+    setForm({ username: "", password: "", full_name: "", role: "sales" });
+    setOpen(false);
+  }
+  return (
+    <>
+      <section className="panel full-panel">
+        <div className="panel-heading">
+          <div><p className="section-label">Accesos privados</p><h2>Usuarios del sistema</h2></div>
+          <button className="primary-button" onClick={() => setOpen(true)}><Plus size={17} /> Nuevo usuario</button>
+        </div>
+        <DataTable headers={["Nombre", "Usuario", "Perfil", "Estado"]} rows={users.map((user) => [
+          user.full_name || user.username || user.id,
+          user.username ?? "-",
+          roleLabel(user.role),
+          user.active ? "Activo" : "Inactivo",
+        ])} />
+      </section>
+      {open && (
+        <div className="drawer-backdrop">
+          <aside className="drawer small-drawer">
+            <div className="panel-heading"><div><p className="section-label">Nuevo acceso</p><h2>Crear usuario</h2></div><button className="icon-button" onClick={() => setOpen(false)}><X size={18} /></button></div>
+            <div className="form-grid one">
+              <label>Nombre<input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="Nombre de la persona" /></label>
+              <label>Usuario<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} placeholder="usuario" /></label>
+              <label>Contrasena<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+              <label>Perfil<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="sales">Ventas</option><option value="warehouse">Inventario</option><option value="manager">Gerencia</option><option value="admin">Administrador</option></select></label>
+            </div>
+            <button className="primary-button wide" disabled={!form.username || !form.password} onClick={() => void submit()}><Save size={18} /> Crear usuario</button>
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
+
+function roleLabel(role: string) {
+  if (role === "admin") return "Administrador";
+  if (role === "manager") return "Gerencia";
+  if (role === "warehouse") return "Inventario";
+  return "Ventas";
+}
+
 function Reports({ products, documents, kardex, exportExcel }: { products: Product[]; documents: any[]; kardex: any[]; exportExcel: () => void }) {
   return <section className="panel full-panel"><div className="panel-heading"><div><p className="section-label">Descargas</p><h2>Reportes</h2></div><button className="primary-button" onClick={exportExcel}><Download size={17} /> Exportar Excel</button></div><DataTable headers={["Reporte", "Registros"]} rows={[["Inventario", products.length], ["Facturas", documents.length], ["Kardex", kardex.length]]} /></section>;
 }
@@ -561,7 +752,7 @@ function EmptyWork({ title, text }: { title: string; text: string }) {
   return <div className="empty-work"><strong>{title}</strong><p>{text}</p></div>;
 }
 
-function LoginScreen({ children, message }: { children?: React.ReactNode; message?: string }) {
+function LoginScreen({ children, message }: { children?: ReactNode; message?: string }) {
   return <main className="login-screen">{children ?? <div className="auth-card"><BrandMark /><h1>Sistema no configurado</h1><p>{message}</p></div>}</main>;
 }
 
