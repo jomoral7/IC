@@ -23,7 +23,7 @@ import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
 import { supabase } from "./lib/supabase";
-import type { Account, AccountType, BonusPayment, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, Seller, SellerGoal, UserProfile } from "./types";
+import type { Account, AccountType, BonusPayment, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
 import { BrandMark, LoginScreen } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
 import { POS } from "./modules/Pos";
@@ -33,6 +33,7 @@ import { Parties } from "./modules/Parties";
 import { Sellers } from "./modules/Sellers";
 import { Users as UsersView } from "./modules/Users";
 import { Accounting } from "./modules/Accounting";
+import { Analytics } from "./modules/Analytics";
 import { InvoiceDetailModal, type InvoiceItem } from "./modules/InvoiceDetail";
 
 const modules = [
@@ -42,6 +43,7 @@ const modules = [
   { label: "Facturas", icon: ReceiptText },
   { label: "Kardex", icon: ClipboardList },
   { label: "Vendedores", icon: UserRound },
+  { label: "Analisis", icon: BarChart3 },
   { label: "Contabilidad", icon: Wallet },
   { label: "Clientes", icon: Users },
   { label: "Proveedores", icon: Truck },
@@ -71,6 +73,7 @@ export function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [journal, setJournal] = useState<JournalEntryFull[]>([]);
+  const [salesLines, setSalesLines] = useState<SalesLine[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
@@ -104,7 +107,7 @@ export function App() {
   async function loadWorkspace() {
     if (!supabase) return;
     setLoading(true);
-    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes] =
+    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes] =
       await Promise.all([
         supabase.from("products").select("*").eq("active", true).order("name"),
         supabase.from("stock_levels").select("product_id, quantity, location_id"),
@@ -129,6 +132,12 @@ export function App() {
           .order("entry_date", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(500),
+        supabase
+          .from("document_items")
+          .select("product_id, quantity, unit_price, unit_cost, products(name, internal_code, sku), documents!inner(kind, created_at, voided_at)")
+          .eq("documents.kind", "sale")
+          .is("documents.voided_at", null)
+          .limit(2000),
       ]);
 
     if (productRes.error) setNotice(productRes.error.message);
@@ -207,14 +216,40 @@ export function App() {
     }));
     setJournal(fullJournal);
 
-    // Movimientos de caja = asientos de gasto/ingreso, resumidos para la tabla amigable.
+    // Lineas de venta (facturas no anuladas) para el analisis.
+    setSalesLines(
+      (salesItemsRes.data ?? []).map((it: any) => ({
+        product_id: it.product_id,
+        name: it.products?.name ?? "Producto",
+        code: it.products?.internal_code ?? it.products?.sku ?? null,
+        qty: Number(it.quantity ?? 0),
+        revenue: Number(it.quantity ?? 0) * Number(it.unit_price ?? 0),
+        cost: Number(it.quantity ?? 0) * Number(it.unit_cost ?? 0),
+        date: it.documents?.created_at ?? new Date().toISOString(),
+      })) as SalesLine[],
+    );
+
+    // Movimientos = todo asiento que afecte ingresos o gastos (ventas, gastos, ingresos, comisiones).
+    // Una venta cuenta como ingreso (cuenta Ventas); una comision/gasto como gasto.
     setMovements(
       fullJournal
-        .filter((e) => e.source === "expense" || e.source === "income")
         .map((e) => {
-          const amount = e.lines.reduce((s, l) => s + l.debit, 0);
-          const isIncome = e.source === "income";
-          const categoryLine = e.lines.find((l) => l.account_type === (isIncome ? "income" : "expense"));
+          const incomeLines = e.lines.filter((l) => l.account_type === "income");
+          const expenseLines = e.lines.filter((l) => l.account_type === "expense");
+          let type: "income" | "expense";
+          let amount: number;
+          let categoryLine;
+          if (incomeLines.length > 0) {
+            type = "income";
+            amount = incomeLines.reduce((s, l) => s + (l.credit - l.debit), 0);
+            categoryLine = incomeLines[0];
+          } else if (expenseLines.length > 0) {
+            type = "expense";
+            amount = expenseLines.reduce((s, l) => s + (l.debit - l.credit), 0);
+            categoryLine = expenseLines[0];
+          } else {
+            return null; // asiento que no toca resultados (ej. traslado entre cuentas)
+          }
           const payLine = e.lines.find((l) => {
             const acc = accountRes.data?.find((a: any) => a.id === l.account_id);
             return acc?.system_key === "cash" || acc?.system_key === "bank";
@@ -222,14 +257,15 @@ export function App() {
           return {
             id: e.id,
             entry_date: e.entry_date,
-            memo: e.memo,
-            type: isIncome ? "income" : "expense",
+            memo: e.memo ?? (e.source === "sale" ? "Venta" : e.source === "void" ? "Anulacion" : null),
+            type,
             amount,
             category_name: categoryLine?.account_name ?? null,
             pay_account_name: payLine?.account_name ?? null,
             created_at: e.created_at,
           } as CashMovement;
-        }),
+        })
+        .filter((m): m is CashMovement => m !== null),
     );
 
     // Bloquear el acceso si el usuario actual fue desactivado.
@@ -1157,7 +1193,7 @@ export function App() {
   const currentRole = users.find((u) => u.id === session?.user?.id)?.role ?? "admin";
   const rolePermissions: Record<string, ModuleName[]> = {
     admin: modules.map((m) => m.label),
-    manager: ["Dashboard", "POS", "Inventario", "Facturas", "Kardex", "Vendedores", "Contabilidad", "Clientes", "Proveedores", "Reportes"],
+    manager: ["Dashboard", "POS", "Inventario", "Facturas", "Kardex", "Vendedores", "Analisis", "Contabilidad", "Clientes", "Proveedores", "Reportes"],
     warehouse: ["Dashboard", "Inventario", "Proveedores", "Kardex"],
     sales: ["Dashboard", "POS", "Clientes", "Facturas"],
   };
@@ -1270,6 +1306,7 @@ export function App() {
         {selectedModule === "Contabilidad" && (
           <Accounting accounts={accounts} movements={movements} journal={journal} registerMovement={registerMovement} saveAccount={saveAccount} />
         )}
+        {selectedModule === "Analisis" && <Analytics products={products} sales={salesLines} />}
         {selectedModule === "Clientes" && (
           <Parties rows={customers} title="Clientes" kind="customer" onSave={saveParty} onDelete={deleteParty} />
         )}

@@ -88,6 +88,17 @@ export type JournalEntryFull = {
   lines: JournalLine[];
 };
 
+/** Una linea de venta (para analisis). */
+export type SalesLine = {
+  product_id: string;
+  name: string;
+  code: string | null;
+  qty: number;
+  revenue: number;
+  cost: number;
+  date: string; // fecha de la factura (ISO)
+};
+
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   asset: "Activo",
   liability: "Pasivo",

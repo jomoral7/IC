@@ -2981,3 +2981,72 @@ td:last-child {
   font-size: 13px;
   margin-top: 8px;
 }
+
+/* ---- Analisis de ventas ---- */
+.analytics-table {
+  overflow-x: auto;
+}
+.mini-bar {
+  width: 100%;
+  min-width: 80px;
+  height: 8px;
+  background: #eef0ee;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.mini-bar-fill {
+  height: 100%;
+  background: var(--navy);
+  border-radius: 6px;
+}
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rank-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.rank-pos {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+.rank-main {
+  flex: 1;
+}
+.rank-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.rank-head b {
+  font-variant-numeric: tabular-nums;
+}
+.rank-bar {
+  height: 10px;
+  background: #eef0ee;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.rank-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #d9a13b, #14384c);
+  border-radius: 6px;
+}
+.rank-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+  display: block;
+}

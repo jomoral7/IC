@@ -157,9 +157,14 @@ export function Accounting({
               m.category_name ?? "-",
               m.pay_account_name ?? "-",
               m.memo ?? "-",
-              <b style={{ color: m.type === "income" ? "#1f7a4d" : "#b4231f" }}>
-                {m.type === "income" ? "+" : "-"} {lps(m.amount)}
-              </b>,
+              (() => {
+                const signed = m.type === "income" ? m.amount : -m.amount;
+                return (
+                  <b style={{ color: signed >= 0 ? "#1f7a4d" : "#b4231f" }}>
+                    {signed >= 0 ? "+" : "-"} {lps(Math.abs(signed))}
+                  </b>
+                );
+              })(),
             ])}
           />
         )
