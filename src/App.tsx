@@ -1,7 +1,6 @@
 import {
   BarChart3,
   Boxes,
-  Building2,
   ClipboardList,
   Download,
   FileSpreadsheet,
@@ -9,7 +8,6 @@ import {
   Menu,
   Printer,
   ReceiptText,
-  Search,
   ShoppingBag,
   Tag,
   Truck,
@@ -26,7 +24,7 @@ import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
 import { supabase } from "./lib/supabase";
 import type { Account, AccountType, BonusPayment, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
-import { BrandMark, LoginScreen } from "./ui";
+import { BrandMark, LoginScreen, roleLabel } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
 import { POS } from "./modules/Pos";
 import { Inventory } from "./modules/Inventory";
@@ -55,7 +53,7 @@ const modules = [
   { label: "Contabilidad", icon: Wallet },
   { label: "Clientes", icon: Users },
   { label: "Proveedores", icon: Truck },
-  { label: "Usuarios", icon: Users },
+  { label: "Configuracion", icon: Users },
   { label: "Reportes", icon: FileSpreadsheet },
 ] as const;
 
@@ -91,8 +89,10 @@ export function App() {
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [journal, setJournal] = useState<JournalEntryFull[]>([]);
   const [salesLines, setSalesLines] = useState<SalesLine[]>([]);
+  const [backupDaysAgo, setBackupDaysAgo] = useState<number | null>(null);
+  const [auditLog, setAuditLog] = useState<any[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [query, setQuery] = useState("");
+  const query = "";
   const [notice, setNotice] = useState("");
   const [detailDoc, setDetailDoc] = useState<any | null>(null);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
@@ -121,6 +121,17 @@ export function App() {
     setSelectedModule((cur) => (allow.includes(cur) ? cur : allow[0]));
   }, [users, session]);
 
+  // Revisa cuando fue el ultimo respaldo (para el recordatorio semanal).
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem("ic_last_backup");
+      if (!last) setBackupDaysAgo(null);
+      else setBackupDaysAgo(Math.floor((Date.now() - new Date(last).getTime()) / 86400000));
+    } catch {
+      setBackupDaysAgo(null);
+    }
+  }, [session]);
+
   // Auto-ocultar la notificacion tras unos segundos.
   useEffect(() => {
     if (!notice) return;
@@ -131,14 +142,14 @@ export function App() {
   async function loadWorkspace() {
     if (!supabase) return;
     setLoading(true);
-    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes] =
+    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes] =
       await Promise.all([
         supabase.from("products").select("*").eq("active", true).order("name"),
         supabase.from("stock_levels").select("product_id, quantity, location_id"),
         supabase.from("parties").select("id, name, kind, tax_id, phone").eq("kind", "supplier").order("name"),
         supabase.from("parties").select("id, name, kind, tax_id, phone").eq("kind", "customer").order("name"),
         supabase.from("inventory_locations").select("id, name").order("name"),
-        supabase.from("documents").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("documents").select("*").order("created_at", { ascending: false }).limit(2000),
         supabase.from("inventory_kardex").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("profiles").select("id, full_name, username, role, active").order("full_name"),
         supabase.from("sellers").select("id, name, code, phone, commission_rate, active, user_id").order("name"),
@@ -162,6 +173,7 @@ export function App() {
           .eq("documents.kind", "sale")
           .is("documents.voided_at", null)
           .limit(2000),
+        supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300),
       ]);
 
     if (productRes.error) setNotice(productRes.error.message);
@@ -225,6 +237,7 @@ export function App() {
     setGoals((goalRes.data ?? []) as SellerGoal[]);
     setBonusPayments((bonusRes.data ?? []) as BonusPayment[]);
     setStockRequests(pendingRequests);
+    setAuditLog(auditRes.data ?? []);
     setAccounts((accountRes.data ?? []) as Account[]);
 
     // Libro completo (todos los asientos con sus lineas).
@@ -309,6 +322,19 @@ export function App() {
     setLoading(false);
   }
 
+  // Nombre del usuario actual (para huella y registros).
+  function currentUserName(): string {
+    const me = users.find((u) => u.id === session?.user?.id);
+    return me?.full_name || me?.username || session?.user?.email || "Usuario";
+  }
+
+  // Registra la huella de quien hace cada accion importante (via funcion segura en la base).
+  async function logAudit(action: string, detail: string) {
+    if (!supabase) return;
+    const { error } = await supabase.rpc("log_action", { p_action: action, p_detail: detail });
+    if (error) console.warn("No se pudo registrar en bitacora:", error.message);
+  }
+
   async function ensureLocation() {
     if (!supabase) throw new Error("Supabase no configurado");
     if (locations[0]) return locations[0];
@@ -351,10 +377,15 @@ export function App() {
       qr_payload: form.qr_payload || generatedCode,
       active: true,
     };
+    const who = currentUserName();
+    const now = new Date().toISOString();
+    const writePayload = id
+      ? { ...payload, updated_by_name: who, updated_at: now }
+      : { ...payload, created_by_name: who, updated_by_name: who, updated_at: now };
     const location = await ensureLocation();
     const { data, error } = id
-      ? await supabase.from("products").update(payload).eq("id", id).select("*").single()
-      : await supabase.from("products").insert(payload).select("*").single();
+      ? await supabase.from("products").update(writePayload).eq("id", id).select("*").single()
+      : await supabase.from("products").insert(writePayload).select("*").single();
     if (error) {
       setNotice(error.message);
       return;
@@ -362,6 +393,7 @@ export function App() {
     await supabase
       .from("stock_levels")
       .upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
+    await logAudit(id ? "Editar producto" : "Crear producto", `${payload.name} (${payload.internal_code})`);
     setNotice("Producto guardado");
     await loadWorkspace();
   }
@@ -404,6 +436,9 @@ export function App() {
         internal_code: code,
         qr_payload: code,
         active: true,
+        created_by_name: currentUserName(),
+        updated_by_name: currentUserName(),
+        updated_at: new Date().toISOString(),
       };
       const { data, error } = await supabase.from("products").insert(payload).select("id").single();
       if (error) {
@@ -413,6 +448,7 @@ export function App() {
       await supabase.from("stock_levels").upsert({ product_id: data.id, location_id: location.id, quantity: Number(combo.qty) });
       created++;
     }
+    await logAudit("Crear variantes", `${created} variante(s) de "${base.name}"`);
     setNotice(`${created} variante(s) de "${base.name}" creadas`);
     await loadWorkspace();
   }
@@ -432,6 +468,8 @@ export function App() {
       setNotice(error.message);
       return;
     }
+    const alcance = scope.type === "all" ? "todos" : scope.type === "selected" ? `${scope.ids?.length ?? 0} productos` : `${scope.type} ${scope.value ?? ""}`;
+    await logAudit("Descuento", pct > 0 ? `${pct}% a ${alcance}` : `Quitar descuento a ${alcance}`);
     setNotice(pct > 0 ? `Descuento de ${pct}% aplicado` : "Descuento quitado");
     await loadWorkspace();
   }
@@ -450,7 +488,24 @@ export function App() {
       setNotice(data?.error ?? error?.message ?? "No se pudo crear usuario");
       return;
     }
-    setNotice("Usuario creado");
+    // Si es un usuario de VENTAS, se le crea su ficha de vendedor automaticamente (enlazada).
+    if (payload.role === "sales") {
+      const { data: prof } = await supabase.from("profiles").select("id").eq("username", payload.username).maybeSingle();
+      if (prof?.id) {
+        const exists = await supabase.from("sellers").select("id").eq("user_id", prof.id).maybeSingle();
+        if (!exists.data) {
+          await supabase.from("sellers").insert({
+            name: payload.full_name,
+            code: `V-${Date.now().toString().slice(-6)}`,
+            commission_rate: 0,
+            active: true,
+            user_id: prof.id,
+          });
+        }
+      }
+    }
+    await logAudit("Crear usuario", `${payload.full_name} (${payload.username}) · rol ${payload.role}`);
+    setNotice(payload.role === "sales" ? "Usuario y vendedor creados" : "Usuario creado");
     await loadWorkspace();
   }
 
@@ -461,6 +516,9 @@ export function App() {
       setNotice(data?.error ?? error?.message ?? "No se pudo actualizar el usuario");
       return;
     }
+    const target = users.find((u) => u.id === payload.id);
+    const what = payload.password ? "reset contraseña" : payload.active === false ? "desactivar" : payload.active === true ? "activar" : "editar";
+    await logAudit("Editar usuario", `${target?.full_name ?? target?.username ?? payload.id} · ${what}`);
     setNotice(payload.password ? "Contraseña actualizada" : "Usuario actualizado");
     await loadWorkspace();
   }
@@ -541,6 +599,7 @@ export function App() {
         ],
       );
     }
+    await logAudit("Pagar comision", `${seller?.name ?? ""} · L ${(comm?.commission_amount ?? 0).toLocaleString("es-HN")} · fact ${comm?.doc?.document_number ?? ""}`);
     setNotice("Comision pagada");
     await loadWorkspace();
   }
@@ -588,6 +647,8 @@ export function App() {
         ],
       );
     }
+    const bSeller = sellers.find((s) => s.id === sellerId);
+    await logAudit("Pagar bono", `${bSeller?.name ?? ""} · L ${bonus.toLocaleString("es-HN")} · ${period}`);
     setNotice("Bono pagado");
     await loadWorkspace();
   }
@@ -608,6 +669,7 @@ export function App() {
     if (!ok) return;
     const { error } = await supabase.from("products").update({ active: false }).eq("id", product.id);
     if (error) setNotice(error.message);
+    else await logAudit("Eliminar producto", `${product.name} (${product.internal_code ?? product.sku})`);
     await loadWorkspace();
   }
 
@@ -629,6 +691,8 @@ export function App() {
     await supabase
       .from("stock_levels")
       .upsert({ product_id: productId, location_id: location.id, quantity: Math.max(0, current + quantityDelta) });
+    const prodName = products.find((p) => p.id === productId)?.name ?? productId;
+    await logAudit("Ajuste de stock", `${prodName} · ${quantityDelta > 0 ? "+" : ""}${quantityDelta} · ${reason}`);
     setNotice("Ajuste registrado");
     await loadWorkspace();
   }
@@ -842,6 +906,7 @@ export function App() {
       .insert({
         kind: "sale",
         document_number: documentNumber,
+        created_by_name: currentUserName(),
         party_id: matched?.id ?? null,
         customer_name: matched ? null : customerName || null,
         location_id: location.id,
@@ -920,10 +985,117 @@ export function App() {
       { account_id: accountIdByKey("inventory"), debit: 0, credit: costTotal, description: "Salida de inventario" },
     ]);
 
+    await logAudit("Venta", `Factura ${document.document_number} · L ${total.toLocaleString("es-HN")}`);
     setCart([]);
     setNotice(`Factura ${document.document_number} emitida`);
     await loadWorkspace();
     return document;
+  }
+
+  // Respaldo COMPLETO de la base en JSON (todos los datos). Restaurable por programa.
+  async function backupDatabase() {
+    if (!supabase) return;
+    setNotice("Generando respaldo...");
+    const tables = [
+      "profiles", "inventory_locations", "products", "stock_levels", "parties", "sellers",
+      "commission_rules", "seller_goals", "documents", "document_items", "payments",
+      "invoice_voids", "stock_requests", "stock_adjustments", "inventory_movements",
+      "seller_commissions", "seller_bonus_payments", "chart_of_accounts", "journal_entries", "journal_lines",
+    ];
+    const dump: Record<string, any> = { _meta: { app: "Inversiones del Caribe", generated_at: new Date().toISOString() } };
+    for (const t of tables) {
+      const { data, error } = await supabase.from(t).select("*");
+      dump[t] = error ? { error: error.message } : data ?? [];
+    }
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `respaldo-IC-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    try {
+      localStorage.setItem("ic_last_backup", new Date().toISOString());
+    } catch {
+      /* localStorage no disponible */
+    }
+    setBackupDaysAgo(0);
+    await logAudit("Respaldo", "Descargo respaldo de la base");
+    setNotice("Respaldo descargado. Guardalo en Drive u OneDrive.");
+  }
+
+  // Orden de tablas respetando dependencias (padres antes que hijos).
+  const RESTORE_ORDER = [
+    "inventory_locations", "chart_of_accounts", "products", "sellers", "parties", "seller_goals",
+    "stock_levels", "documents", "document_items", "payments", "invoice_voids", "stock_requests",
+    "stock_adjustments", "inventory_movements", "seller_commissions", "seller_bonus_payments",
+    "journal_entries", "journal_lines",
+  ];
+
+  // Restaura los DATOS desde un archivo de respaldo JSON (upsert por id).
+  async function restoreDatabase(file: File) {
+    if (!supabase) return;
+    let dump: Record<string, any>;
+    try {
+      dump = JSON.parse(await file.text());
+    } catch {
+      setNotice("El archivo no es un respaldo valido (JSON).");
+      return;
+    }
+    if (!window.confirm("Vas a RESTAURAR datos desde el respaldo. Esto sobrescribe registros con el mismo id. Continuar?")) return;
+    setNotice("Restaurando respaldo...");
+    let ok = 0;
+    for (const t of RESTORE_ORDER) {
+      const rows = dump[t];
+      if (!Array.isArray(rows) || rows.length === 0) continue;
+      // En bloques para no saturar.
+      for (let i = 0; i < rows.length; i += 200) {
+        const chunk = rows.slice(i, i + 200);
+        const { error } = await supabase.from(t).upsert(chunk);
+        if (error) {
+          setNotice(`Error restaurando ${t}: ${error.message}`);
+          return;
+        }
+      }
+      ok++;
+    }
+    await logAudit("Restaurar respaldo", `Restauro ${ok} tablas desde un respaldo`);
+    setNotice(`Respaldo restaurado (${ok} tablas). Recargando...`);
+    await loadWorkspace();
+  }
+
+  // Genera un archivo .sql con los DATOS (INSERTs) para restaurar en el editor SQL de Supabase.
+  async function downloadSqlData() {
+    if (!supabase) return;
+    setNotice("Generando SQL...");
+    const sqlVal = (v: any): string => {
+      if (v === null || v === undefined) return "NULL";
+      if (typeof v === "number") return String(v);
+      if (typeof v === "boolean") return v ? "true" : "false";
+      if (typeof v === "object") return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+      return `'${String(v).replace(/'/g, "''")}'`;
+    };
+    let sql = `-- Respaldo de DATOS - Inversiones del Caribe - ${new Date().toISOString()}\n-- Restaurar en el editor SQL de Supabase (la estructura debe existir).\n\n`;
+    for (const t of RESTORE_ORDER) {
+      const { data } = await supabase.from(t).select("*");
+      if (!data || data.length === 0) continue;
+      const cols = Object.keys(data[0]);
+      sql += `-- ${t} (${data.length})\n`;
+      for (const row of data) {
+        const vals = cols.map((c) => sqlVal((row as any)[c])).join(", ");
+        sql += `INSERT INTO public.${t} (${cols.join(", ")}) VALUES (${vals}) ON CONFLICT (id) DO NOTHING;\n`;
+      }
+      sql += "\n";
+    }
+    const blob = new Blob([sql], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `datos-IC-${new Date().toISOString().slice(0, 10)}.sql`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setNotice("SQL de datos descargado.");
   }
 
   function exportExcel() {
@@ -1064,7 +1236,7 @@ export function App() {
       pdf.setFontSize(11);
       pdf.setTextColor("#14384C");
       pdf.text(`Vendedor: ${internal.sellerName ?? "Sin vendedor"}`, 72, iy + 40);
-      pdf.text(`Comision: L ${internal.commission.toLocaleString("es-HN")}`, 360, iy + 40);
+      pdf.text(`Comision (venta sin ISV): L ${internal.commission.toLocaleString("es-HN")}`, 360, iy + 40);
     }
 
     if (openView) {
@@ -1227,6 +1399,7 @@ export function App() {
     }
     await supabase.from("documents").update({ paid_amount: 0 }).eq("id", doc.id);
 
+    await logAudit("Anular factura", `Factura ${doc.document_number} · motivo: ${reason}`);
     if (!voidErr && !commErr) {
       setNotice(refunded > 0 ? `Factura ${doc.document_number} anulada · devuelto L ${refunded.toLocaleString("es-HN")}` : `Factura ${doc.document_number} anulada`);
     }
@@ -1316,6 +1489,7 @@ export function App() {
         .eq("id", comm.id);
     }
 
+    await logAudit("Editar factura", `Factura ${doc.document_number} · nuevo total L ${subtotal.toLocaleString("es-HN")}`);
     setNotice(`Factura ${doc.document_number} actualizada`);
     setDetailDoc(null);
     await loadWorkspace();
@@ -1352,6 +1526,7 @@ export function App() {
       p_source_id: null,
       p_lines: lines,
     });
+    if (!error) await logAudit(f.type === "expense" ? "Gasto" : "Ingreso", `L ${amount.toLocaleString("es-HN")} · ${f.memo || ""}`);
     setNotice(error ? `No se pudo registrar: ${error.message}` : f.type === "expense" ? "Gasto registrado" : "Ingreso registrado");
     await loadWorkspace();
   }
@@ -1376,7 +1551,6 @@ export function App() {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
-  const lowStock = products.filter((product) => product.stock <= product.min_stock);
   const cartTotal = cart.reduce((sum, line) => sum + line.qty * line.sale_price, 0);
   const categories = Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort();
   const brands = Array.from(new Set(products.map((p) => p.brand).filter(Boolean) as string[])).sort();
@@ -1420,6 +1594,11 @@ export function App() {
             );
           })}
         </nav>
+        <div className="session-user">
+          <span>Sesion iniciada</span>
+          <strong>{currentUserName()}</strong>
+          <em>{roleLabel(currentRole)}</em>
+        </div>
         <button className="session-button" onClick={signOut}>
           <LogOut size={17} /> Cerrar sesion
         </button>
@@ -1431,19 +1610,8 @@ export function App() {
             <h1>{selectedModule}</h1>
           </div>
           <div className="topbar-actions">
-            <div className="searchbox">
-              <Search size={17} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar producto, cliente, factura o proveedor"
-              />
-            </div>
             {currentRole !== "sales" && (
               <>
-                <button className="branch-button">
-                  <Building2 size={17} /> Todas las sucursales
-                </button>
                 <button className="primary-button" onClick={exportExcel}>
                   <Download size={17} /> Excel
                 </button>
@@ -1457,8 +1625,27 @@ export function App() {
             <button onClick={() => setNotice("")}>Cerrar</button>
           </div>
         )}
+        {currentRole === "admin" && (backupDaysAgo === null || backupDaysAgo >= 7) && (
+          <div className="backup-alert">
+            <span>
+              {backupDaysAgo === null
+                ? "Todavia no has hecho un respaldo de la base. Descargalo y guardalo en un lugar seguro."
+                : `Hace ${backupDaysAgo} dias que no haces un respaldo. Conviene descargarlo cada semana.`}
+            </span>
+            <button className="secondary-button" onClick={() => void backupDatabase()}>
+              <Download size={15} /> Respaldar ahora
+            </button>
+          </div>
+        )}
         {selectedModule === "Dashboard" && (
-          <Dashboard products={products} documents={documents} lowStock={lowStock} goTo={(m) => setSelectedModule(m as ModuleName)} />
+          <Dashboard
+            products={products}
+            documents={documents}
+            salesLines={salesLines}
+            sellers={sellers}
+            commissions={commissions}
+            goTo={(m) => setSelectedModule(m as ModuleName)}
+          />
         )}
         {selectedModule === "POS" && (
           <POS
@@ -1473,6 +1660,7 @@ export function App() {
             lockSeller={currentRole === "sales"}
             currentSellerId={sellers.find((s) => s.user_id === session?.user?.id)?.id ?? null}
             printReceipt={(doc) => void downloadInvoice(doc, false, true)}
+            onOpenDetail={(doc) => void openInvoiceDetail(doc)}
           />
         )}
         {selectedModule === "Inventario" && (
@@ -1496,7 +1684,7 @@ export function App() {
           />
         )}
         {selectedModule === "Facturas" && <Invoices documents={documents} onDownload={downloadInvoice} onOpen={openInvoiceDetail} />}
-        {selectedModule === "Kardex" && <Kardex rows={kardex} />}
+        {selectedModule === "Kardex" && <Kardex rows={kardex} products={products} />}
         {selectedModule === "Contabilidad" && (
           <Accounting accounts={accounts} movements={movements} journal={journal} registerMovement={registerMovement} saveAccount={saveAccount} />
         )}
@@ -1525,7 +1713,17 @@ export function App() {
         {selectedModule === "Proveedores" && (
           <Parties rows={suppliers} title="Proveedores" kind="supplier" onSave={saveParty} onDelete={deleteParty} />
         )}
-        {selectedModule === "Usuarios" && <UsersView users={users} onCreate={createUser} onUpdate={updateUser} />}
+        {selectedModule === "Configuracion" && (
+          <UsersView
+            users={users}
+            auditLog={auditLog}
+            onCreate={createUser}
+            onUpdate={updateUser}
+            onBackup={backupDatabase}
+            onRestore={restoreDatabase}
+            onDownloadSql={downloadSqlData}
+          />
+        )}
         {selectedModule === "Reportes" && (
           <Reports products={products} documents={documents} kardex={kardex} exportExcel={exportExcel} />
         )}

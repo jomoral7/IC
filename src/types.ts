@@ -141,6 +141,10 @@ export type Product = {
   discount_pct: number;
   /** Precio final ya con descuento aplicado (calculado). */
   price_final: number;
+  /** Huella: quien lo creo / edito. */
+  created_by_name?: string | null;
+  updated_by_name?: string | null;
+  updated_at?: string | null;
 };
 
 export type ProductForm = Omit<

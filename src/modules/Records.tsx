@@ -1,5 +1,5 @@
 import { Download, Plus, Printer, Save, Search, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Party, Product, UserProfile } from "../types";
 import { lps, shortDate } from "../lib/format";
 import { DataTable, EmptyWork, roleLabel } from "../ui";
@@ -57,7 +57,77 @@ export function Invoices({
   );
 }
 
-export function Kardex({ rows }: { rows: any[] }) {
+const MOV_LABEL: Record<string, string> = {
+  sale: "Venta",
+  purchase: "Compra / entrada",
+  adjustment_in: "Ajuste (+)",
+  adjustment_out: "Ajuste (-)",
+  transfer_in: "Traslado (entra)",
+  transfer_out: "Traslado (sale)",
+  return: "Devolucion",
+};
+function movLabel(t: string): string {
+  return MOV_LABEL[t] ?? t;
+}
+
+export function Kardex({ rows, products }: { rows: any[]; products: Product[] }) {
+  const [productId, setProductId] = useState("__all__");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const isAll = productId === "__all__";
+  const product = isAll ? null : products.find((p) => p.id === productId) ?? null;
+
+  const inRange = (iso: string) => {
+    const d = new Date(iso).toISOString().slice(0, 10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  };
+
+  // Todos los productos: movimientos del rango, mas recientes primero.
+  const allRows = useMemo(
+    () =>
+      rows
+        .filter((r) => inRange(r.created_at))
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [rows, from, to],
+  );
+
+  // Movimientos de ESTE producto, en orden cronologico ascendente.
+  const productRows = useMemo(() => {
+    if (!product) return [];
+    return rows
+      .filter((r) => r.sku === product.sku)
+      .slice()
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }, [rows, product]);
+
+  // Saldo corrido (existencias despues de cada movimiento) que termina en el stock actual.
+  const withBalance = useMemo(() => {
+    if (!product) return [];
+    const totalSigned = productRows.reduce((s, r) => s + Number(r.signed_quantity || 0), 0);
+    let balance = product.stock - totalSigned; // existencias antes del primer movimiento
+    return productRows.map((r) => {
+      balance += Number(r.signed_quantity || 0);
+      return { ...r, saldo: balance };
+    });
+  }, [productRows, product]);
+
+  // Filtro por rango de fechas.
+  const shown = useMemo(
+    () =>
+      withBalance.filter((r) => {
+        const d = new Date(r.created_at).toISOString().slice(0, 10);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      }),
+    [withBalance, from, to],
+  );
+
+  const finalBalance = withBalance.length ? withBalance[withBalance.length - 1].saldo : product?.stock ?? 0;
+
   return (
     <section className="panel full-panel">
       <div className="panel-heading">
@@ -66,20 +136,106 @@ export function Kardex({ rows }: { rows: any[] }) {
           <h2>Kardex de inventario</h2>
         </div>
       </div>
-      {rows.length === 0 ? (
-        <EmptyWork title="Sin movimientos" text="Compras, ventas y ajustes generaran el historial aqui." />
+
+      <div className="kardex-filters">
+        <label>
+          Producto
+          <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+            <option value="__all__">Todos los productos</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {[p.size, p.color].filter(Boolean).join(" ")} ({p.internal_code ?? p.sku})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Desde
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label>
+          Hasta
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
+      </div>
+
+      {isAll ? (
+        allRows.length === 0 ? (
+          <EmptyWork title="Sin movimientos" text="No hay movimientos en el rango elegido." />
+        ) : (
+          <div className="inv-table-wrap">
+            <table className="inv-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Producto</th>
+                  <th>Movimiento</th>
+                  <th>Documento</th>
+                  <th className="num">Entrada</th>
+                  <th className="num">Salida</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allRows.map((r, i) => {
+                  const qty = Number(r.signed_quantity || 0);
+                  return (
+                    <tr key={i}>
+                      <td>{shortDate(r.created_at)}</td>
+                      <td>
+                        <strong>{r.product_name}</strong> <span className="muted">· {r.sku}</span>
+                      </td>
+                      <td>{movLabel(r.movement_type)}</td>
+                      <td className="muted">{r.document_number ?? "-"}</td>
+                      <td className="num" style={{ color: qty > 0 ? "#1f7a4d" : undefined }}>{qty > 0 ? `+${qty}` : ""}</td>
+                      <td className="num" style={{ color: qty < 0 ? "#b4231f" : undefined }}>{qty < 0 ? qty : ""}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : !product ? (
+        <EmptyWork title="Sin productos" text="Crea productos para ver su kardex." />
+      ) : shown.length === 0 ? (
+        <EmptyWork title="Sin movimientos" text="Este producto no tiene movimientos en el rango elegido." />
       ) : (
-        <DataTable
-          headers={["Fecha", "SKU", "Producto", "Movimiento", "Cantidad", "Documento"]}
-          rows={rows.map((row) => [
-            shortDate(row.created_at),
-            row.sku,
-            row.product_name,
-            row.movement_type,
-            row.signed_quantity,
-            row.document_number ?? "-",
-          ])}
-        />
+        <>
+          <div className="inv-table-wrap">
+            <table className="inv-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Movimiento</th>
+                  <th>Documento</th>
+                  <th className="num">Entrada</th>
+                  <th className="num">Salida</th>
+                  <th className="num">Existencias</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r, i) => {
+                  const qty = Number(r.signed_quantity || 0);
+                  return (
+                    <tr key={i}>
+                      <td>{shortDate(r.created_at)}</td>
+                      <td>{movLabel(r.movement_type)}</td>
+                      <td className="muted">{r.document_number ?? "-"}</td>
+                      <td className="num" style={{ color: qty > 0 ? "#1f7a4d" : undefined }}>{qty > 0 ? `+${qty}` : ""}</td>
+                      <td className="num" style={{ color: qty < 0 ? "#b4231f" : undefined }}>{qty < 0 ? qty : ""}</td>
+                      <td className="num">
+                        <strong>{r.saldo}</strong>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="kardex-final">
+            Existencias actuales de <strong>{product.name}</strong>: <strong>{finalBalance}</strong>
+          </p>
+        </>
       )}
     </section>
   );

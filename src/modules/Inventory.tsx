@@ -769,6 +769,18 @@ function ProductDrawer({
           </button>
         </div>
 
+        {product && (product.created_by_name || product.updated_by_name) && (
+          <div className="who-note">
+            {product.created_by_name && <span>Creado por <strong>{product.created_by_name}</strong></span>}
+            {product.updated_by_name && (
+              <span>
+                · Última edición por <strong>{product.updated_by_name}</strong>
+                {product.updated_at ? ` (${shortDate(product.updated_at)})` : ""}
+              </span>
+            )}
+          </div>
+        )}
+
         <button className="secondary-button wide label-scan-btn" onClick={() => setLabelOpen(true)}>
           <ScanLine size={16} /> Leer etiqueta con foto
         </button>

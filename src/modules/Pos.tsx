@@ -24,6 +24,7 @@ export function POS({
   lockSeller = false,
   currentSellerId = null,
   printReceipt,
+  onOpenDetail,
 }: {
   products: Product[];
   cart: CartLine[];
@@ -39,6 +40,8 @@ export function POS({
   currentSellerId?: string | null;
   /** Genera el comprobante (PDF cliente) de la venta recien hecha. */
   printReceipt: (doc: any) => void;
+  /** Abre el formulario de detalle de la factura recien generada. */
+  onOpenDetail: (doc: any) => void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [sellerId, setSellerId] = useState("");
@@ -101,8 +104,8 @@ export function POS({
     setIssuing(false);
     if (doc) {
       setLastSale(doc);
-      // Muestra el comprobante automaticamente al generar la venta.
-      printReceipt(doc);
+      // Abre el formulario de detalle de la factura recien generada.
+      onOpenDetail(doc);
     }
     setCustomerName("");
     setSellerId("");
@@ -269,7 +272,7 @@ export function POS({
 
         {selectedSeller && (
           <div className="commission-note">
-            Comision {selectedSeller.name}: <strong>{lps(commission)}</strong> ({Math.round(selectedSeller.commission_rate * 100)}%)
+            Comision {selectedSeller.name}: <strong>{lps(commission)}</strong> ({Math.round(selectedSeller.commission_rate * 100)}% sobre venta sin ISV)
             <span> · solo interno, no sale en la factura</span>
           </div>
         )}

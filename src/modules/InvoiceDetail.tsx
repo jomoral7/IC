@@ -124,6 +124,10 @@ export function InvoiceDetailModal({
             <strong>{doc.payment_terms === "cash" ? "Contado" : "Credito"}</strong>
           </div>
           <div>
+            <span>Registrada por</span>
+            <strong>{doc.created_by_name ?? "—"}</strong>
+          </div>
+          <div>
             <span>Total facturado</span>
             <strong className="big">{lps(Number(doc.total))}</strong>
           </div>
@@ -140,7 +144,7 @@ export function InvoiceDetailModal({
                 <strong>{commissionInfo.sellerName ?? "Sin vendedor"}</strong>
               </div>
               <div>
-                <span>Comision</span>
+                <span>Comision (sobre venta sin ISV)</span>
                 <strong>{lps(commissionInfo.amount)}</strong>
               </div>
             </div>
