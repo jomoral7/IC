@@ -7,9 +7,11 @@ import {
   FileSpreadsheet,
   LogOut,
   Menu,
+  Printer,
   ReceiptText,
   Search,
   ShoppingBag,
+  Tag,
   Truck,
   UserRound,
   Users,
@@ -34,12 +36,18 @@ import { Sellers } from "./modules/Sellers";
 import { Users as UsersView } from "./modules/Users";
 import { Accounting } from "./modules/Accounting";
 import { Analytics } from "./modules/Analytics";
+import { Labels } from "./modules/Labels";
+import { Offers } from "./modules/Offers";
+import { MySales } from "./modules/MySales";
 import { InvoiceDetailModal, type InvoiceItem } from "./modules/InvoiceDetail";
 
 const modules = [
   { label: "Dashboard", icon: BarChart3 },
   { label: "POS", icon: ShoppingBag },
+  { label: "Mis ventas", icon: UserRound },
   { label: "Inventario", icon: Boxes },
+  { label: "Ofertas", icon: Tag },
+  { label: "Etiquetas", icon: Printer },
   { label: "Facturas", icon: ReceiptText },
   { label: "Kardex", icon: ClipboardList },
   { label: "Vendedores", icon: UserRound },
@@ -52,6 +60,15 @@ const modules = [
 ] as const;
 
 type ModuleName = (typeof modules)[number]["label"];
+
+// Permisos por rol: que modulos ve cada usuario.
+// El vendedor (sales) SOLO ve el POS: vende con el precio final, sin costos ni analisis.
+const ROLE_PERMISSIONS: Record<string, ModuleName[]> = {
+  admin: modules.map((m) => m.label),
+  manager: ["Dashboard", "POS", "Inventario", "Ofertas", "Etiquetas", "Facturas", "Kardex", "Vendedores", "Analisis", "Contabilidad", "Clientes", "Proveedores", "Reportes"],
+  warehouse: ["Dashboard", "Inventario", "Etiquetas", "Proveedores", "Kardex"],
+  sales: ["POS", "Mis ventas", "Etiquetas"],
+};
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -97,6 +114,13 @@ export function App() {
     if (session) void loadWorkspace();
   }, [session]);
 
+  // Si el modulo actual no esta permitido para el rol, saltar al primero permitido.
+  useEffect(() => {
+    const role = users.find((u) => u.id === session?.user?.id)?.role ?? "admin";
+    const allow = ROLE_PERMISSIONS[role] ?? ROLE_PERMISSIONS.admin;
+    setSelectedModule((cur) => (allow.includes(cur) ? cur : allow[0]));
+  }, [users, session]);
+
   // Auto-ocultar la notificacion tras unos segundos.
   useEffect(() => {
     if (!notice) return;
@@ -117,14 +141,14 @@ export function App() {
         supabase.from("documents").select("*").order("created_at", { ascending: false }).limit(50),
         supabase.from("inventory_kardex").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("profiles").select("id, full_name, username, role, active").order("full_name"),
-        supabase.from("sellers").select("id, name, code, phone, commission_rate, active").order("name"),
+        supabase.from("sellers").select("id, name, code, phone, commission_rate, active, user_id").order("name"),
         supabase.from("stock_requests").select("id, product_id, requested_quantity, status, supplier_id, created_at"),
         supabase
           .from("seller_commissions")
           .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, total, created_at)")
           .order("created_at", { ascending: false }),
         supabase.from("seller_goals").select("*").order("min_sales"),
-        supabase.from("seller_bonus_payments").select("id, seller_id, goal_id, period, bonus"),
+        supabase.from("seller_bonus_payments").select("id, seller_id, goal_id, period, bonus, status"),
         supabase.from("chart_of_accounts").select("*").eq("active", true).order("code"),
         supabase
           .from("journal_entries")
@@ -159,12 +183,18 @@ export function App() {
     }
 
     setProducts(
-      (productRes.data ?? []).map((product) => ({
-        ...product,
-        stock: Number(totals.get(product.id) ?? 0),
-        stockByLocation: byLocation.get(product.id) ?? {},
-        incoming: Number(incomingByProduct.get(product.id) ?? 0),
-      })),
+      (productRes.data ?? []).map((product) => {
+        const discount = Number(product.discount_pct ?? 0);
+        const priceFinal = Number((Number(product.sale_price) * (1 - discount / 100)).toFixed(2));
+        return {
+          ...product,
+          stock: Number(totals.get(product.id) ?? 0),
+          stockByLocation: byLocation.get(product.id) ?? {},
+          incoming: Number(incomingByProduct.get(product.id) ?? 0),
+          discount_pct: discount,
+          price_final: priceFinal,
+        };
+      }),
     );
     setSuppliers((supplierRes.data ?? []) as Party[]);
     setCustomers((customerRes.data ?? []) as Party[]);
@@ -336,6 +366,83 @@ export function App() {
     await loadWorkspace();
   }
 
+  // Crea varias variantes (talla x color) de un mismo producto base, de una sola vez.
+  async function createProductMatrix(
+    base: {
+      name: string;
+      category: string;
+      brand: string;
+      gender: string;
+      supplier_id: string | null;
+      real_cost: number;
+      sale_price: number;
+      min_stock: number;
+    },
+    combos: { size: string; color: string; qty: number }[],
+  ) {
+    if (!supabase || combos.length === 0) return;
+    const location = await ensureLocation();
+    let created = 0;
+    for (const combo of combos) {
+      const code = await nextInternalCode();
+      const payload = {
+        sku: code,
+        name: base.name.trim(),
+        category: base.category.trim(),
+        barcode: code,
+        min_stock: Number(base.min_stock),
+        cost: Number(base.real_cost),
+        price: Number(base.sale_price),
+        real_cost: Number(base.real_cost),
+        sale_price: Number(base.sale_price),
+        supplier_id: base.supplier_id || null,
+        brand: base.brand || null,
+        size: combo.size || null,
+        color: combo.color || null,
+        gender: base.gender || null,
+        season: null,
+        internal_code: code,
+        qr_payload: code,
+        active: true,
+      };
+      const { data, error } = await supabase.from("products").insert(payload).select("id").single();
+      if (error) {
+        setNotice(`Error creando ${base.name} ${combo.size}/${combo.color}: ${error.message}`);
+        continue;
+      }
+      await supabase.from("stock_levels").upsert({ product_id: data.id, location_id: location.id, quantity: Number(combo.qty) });
+      created++;
+    }
+    setNotice(`${created} variante(s) de "${base.name}" creadas`);
+    await loadWorkspace();
+  }
+
+  // Descuentos en bloque (solo admin/gerencia). scope: todos / categoria / marca / seleccion manual.
+  async function applyDiscount(scope: { type: "all" | "category" | "brand" | "selected"; value?: string; ids?: string[] }, pct: number) {
+    if (!supabase) return;
+    let q = supabase.from("products").update({ discount_pct: pct }).eq("active", true);
+    if (scope.type === "category" && scope.value) q = q.eq("category", scope.value);
+    else if (scope.type === "brand" && scope.value) q = q.eq("brand", scope.value);
+    else if (scope.type === "selected") {
+      if (!scope.ids || scope.ids.length === 0) return;
+      q = q.in("id", scope.ids);
+    }
+    const { error } = await q;
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    setNotice(pct > 0 ? `Descuento de ${pct}% aplicado` : "Descuento quitado");
+    await loadWorkspace();
+  }
+
+  async function clearAllDiscounts() {
+    if (!supabase) return;
+    const { error } = await supabase.from("products").update({ discount_pct: 0 }).gt("discount_pct", 0);
+    setNotice(error ? error.message : "Todas las ofertas quitadas");
+    await loadWorkspace();
+  }
+
   async function createUser(payload: { username: string; password: string; full_name: string; role: string }) {
     if (!supabase) return;
     const { data, error } = await supabase.functions.invoke("admin-create-user", { body: payload });
@@ -381,7 +488,10 @@ export function App() {
     await loadWorkspace();
   }
 
-  async function saveSeller(form: { name: string; code: string; phone: string; commission_rate: number; active: boolean }, id?: string) {
+  async function saveSeller(
+    form: { name: string; code: string; phone: string; commission_rate: number; active: boolean; user_id: string | null },
+    id?: string,
+  ) {
     if (!supabase) return;
     const payload = {
       name: form.name.trim(),
@@ -389,6 +499,7 @@ export function App() {
       phone: form.phone.trim() || null,
       commission_rate: form.commission_rate,
       active: form.active,
+      user_id: form.user_id || null,
     };
     const { error } = id
       ? await supabase.from("sellers").update(payload).eq("id", id)
@@ -455,7 +566,10 @@ export function App() {
     if (!supabase) return;
     const { error } = await supabase
       .from("seller_bonus_payments")
-      .upsert({ seller_id: sellerId, goal_id: goalId, period, sales, bonus, status: "paid" }, { onConflict: "seller_id,goal_id,period" });
+      .upsert(
+        { seller_id: sellerId, goal_id: goalId, period, sales, bonus, status: "paid", paid_at: new Date().toISOString() },
+        { onConflict: "seller_id,period" },
+      );
     if (error) {
       setNotice(error.message);
       return;
@@ -668,7 +782,8 @@ export function App() {
       const existing = current.find((line) => line.id === product.id);
       if (existing)
         return current.map((line) => (line.id === product.id ? { ...line, qty: line.qty + 1 } : line));
-      return [...current, { ...product, qty: 1 }];
+      // Se vende al precio final (con descuento si el producto esta en oferta).
+      return [...current, { ...product, qty: 1, base_price: product.sale_price, sale_price: product.price_final ?? product.sale_price }];
     });
   }
 
@@ -751,6 +866,7 @@ export function App() {
         quantity: line.qty,
         unit_cost: line.real_cost,
         unit_price: line.sale_price,
+        unit_price_original: line.base_price ?? line.sale_price,
         line_total: line.qty * line.sale_price,
       })),
     );
@@ -784,6 +900,8 @@ export function App() {
           commission_amount: Number((taxable * seller.commission_rate).toFixed(2)),
           status: paymentTerms === "cash" ? "pending" : "hold",
         });
+        // Revisa si con esta venta alcanzo un bono del mes (queda pendiente de pago).
+        await supabase.rpc("ensure_month_bonus", { p_seller: seller.id });
       }
     }
 
@@ -805,6 +923,7 @@ export function App() {
     setCart([]);
     setNotice(`Factura ${document.document_number} emitida`);
     await loadWorkspace();
+    return document;
   }
 
   function exportExcel() {
@@ -815,9 +934,9 @@ export function App() {
     writeFile(workbook, "inversiones-del-caribe.xlsx");
   }
 
-  type InvoiceLine = { qty: number; name: string; size: string | null; category: string | null; brand: string | null; color: string | null; sale_price: number };
+  type InvoiceLine = { qty: number; name: string; size: string | null; category: string | null; brand: string | null; color: string | null; sale_price: number; original_price?: number };
 
-  async function buildInvoicePdf(number: string, lines: InvoiceLine[], total: number, customer?: string, dateStr?: string, internal?: { sellerName: string | null; commission: number }, amounts?: { subtotal: number; discount: number; tax: number }) {
+  async function buildInvoicePdf(number: string, lines: InvoiceLine[], total: number, customer?: string, dateStr?: string, internal?: { sellerName: string | null; commission: number }, amounts?: { subtotal: number; discount: number; tax: number }, openView = false) {
     const pdf = new jsPDF({ unit: "pt", format: "letter" });
     pdf.setFillColor("#FFFFFF");
     pdf.rect(0, 0, 612, 792, "F");
@@ -870,6 +989,7 @@ export function App() {
         .filter(Boolean)
         .join(" · ");
       pdf.text(line.name, 96, y);
+      const hasOffer = line.original_price != null && line.original_price > line.sale_price;
       if (variant) {
         pdf.setFontSize(8);
         pdf.setTextColor("#667782");
@@ -877,11 +997,23 @@ export function App() {
         pdf.setFontSize(10);
         pdf.setTextColor("#0B2533");
       }
+      if (hasOffer) {
+        // Precio original tachado + precio con oferta
+        pdf.setFontSize(8);
+        pdf.setTextColor("#98A2AC");
+        const origText = `L ${(line.qty * (line.original_price as number)).toLocaleString("es-HN")}`;
+        const ow = pdf.getTextWidth(origText);
+        pdf.text(origText, 482, y - 10);
+        pdf.setDrawColor("#98A2AC");
+        pdf.line(482, y - 12, 482 + ow, y - 12);
+        pdf.setFontSize(10);
+        pdf.setTextColor("#0B2533");
+      }
       pdf.text(`L ${(line.qty * line.sale_price).toLocaleString("es-HN")}`, 482, y);
       y += variant ? 34 : 24;
     });
 
-    // Desglose (subtotal / descuento / ISV) si aplica
+    // Desglose (subtotal neto / descuento manual / ISV). La oferta ya se ve tachada en la linea.
     if (amounts && (amounts.discount > 0 || amounts.tax > 0)) {
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
@@ -891,8 +1023,10 @@ export function App() {
       pdf.text(`L ${amounts.subtotal.toLocaleString("es-HN")}`, 482, y);
       if (amounts.discount > 0) {
         y += 16;
+        pdf.setTextColor("#b4231f");
         pdf.text("Descuento", 360, y);
         pdf.text(`- L ${amounts.discount.toLocaleString("es-HN")}`, 482, y);
+        pdf.setTextColor("#667782");
       }
       if (amounts.tax > 0) {
         y += 16;
@@ -933,14 +1067,21 @@ export function App() {
       pdf.text(`Comision: L ${internal.commission.toLocaleString("es-HN")}`, 360, iy + 40);
     }
 
-    pdf.save(`factura-${internal ? "interna-" : ""}${number}.pdf`);
+    if (openView) {
+      // Abre el PDF en una pestaña para verlo/imprimirlo.
+      const url = pdf.output("bloburl");
+      const win = window.open(url, "_blank");
+      if (!win) pdf.save(`factura-${number}.pdf`); // si bloquean la pestaña, lo descarga
+    } else {
+      pdf.save(`factura-${internal ? "interna-" : ""}${number}.pdf`);
+    }
   }
 
-  async function downloadInvoice(doc: any, internal = false) {
+  async function downloadInvoice(doc: any, internal = false, openView = false) {
     if (!supabase) return;
     const { data: items, error } = await supabase
       .from("document_items")
-      .select("quantity, unit_price, products(name, size, category, brand, color)")
+      .select("quantity, unit_price, unit_price_original, products(name, size, category, brand, color)")
       .eq("document_id", doc.id);
     if (error) {
       setNotice(error.message);
@@ -954,6 +1095,7 @@ export function App() {
       brand: it.products?.brand ?? null,
       color: it.products?.color ?? null,
       sale_price: Number(it.unit_price),
+      original_price: it.unit_price_original != null ? Number(it.unit_price_original) : undefined,
     }));
     const customer = doc.customer_name ?? undefined;
     const dateStr = new Date(doc.created_at).toLocaleDateString("es-HN");
@@ -969,18 +1111,28 @@ export function App() {
         commission: Number((comm as any)?.commission_amount ?? 0),
       };
     }
-    await buildInvoicePdf(doc.document_number, lines, Number(doc.total), customer, dateStr, internalInfo, {
-      subtotal: Number(doc.subtotal ?? doc.total),
-      discount: Number(doc.discount ?? 0),
-      tax: Number(doc.tax ?? 0),
-    });
+    await buildInvoicePdf(
+      doc.document_number,
+      lines,
+      Number(doc.total),
+      customer,
+      dateStr,
+      internalInfo,
+      {
+        subtotal: Number(doc.subtotal ?? doc.total),
+        discount: Number(doc.discount ?? 0),
+        tax: Number(doc.tax ?? 0),
+      },
+      openView,
+    );
   }
+
 
   async function openInvoiceDetail(doc: any) {
     if (!supabase) return;
     const { data: rows, error } = await supabase
       .from("document_items")
-      .select("product_id, quantity, unit_price, products(name, size, internal_code, sku, category, brand, color)")
+      .select("product_id, quantity, unit_price, unit_price_original, products(name, size, internal_code, sku, category, brand, color)")
       .eq("document_id", doc.id);
     if (error) {
       setNotice(error.message);
@@ -996,6 +1148,7 @@ export function App() {
       code: it.products?.internal_code ?? it.products?.sku ?? null,
       qty: Number(it.quantity),
       unit_price: Number(it.unit_price),
+      original_price: it.unit_price_original != null ? Number(it.unit_price_original) : undefined,
       stock: products.find((p) => p.id === it.product_id)?.stock ?? 0,
     }));
     const { data: comm } = await supabase
@@ -1022,11 +1175,14 @@ export function App() {
       return;
     }
     // 2) Cancelar la comision del vendedor de esta factura.
+    const { data: commRow } = await supabase.from("seller_commissions").select("seller_id").eq("document_id", doc.id).maybeSingle();
     const { error: commErr } = await supabase
       .from("seller_commissions")
       .update({ status: "cancelled" })
       .eq("document_id", doc.id);
     if (commErr) setNotice(`Anulada, pero la comision no se cancelo: ${commErr.message}`);
+    // Recalcular el bono del mes de ese vendedor (pudo bajar del rango).
+    if (commRow?.seller_id) await supabase.rpc("ensure_month_bonus", { p_seller: commRow.seller_id });
 
     // 3) Registrar el motivo y devolver el stock al inventario.
     await supabase.from("invoice_voids").insert({ document_id: doc.id, reason, voided_by: session?.user?.id ?? null });
@@ -1064,7 +1220,16 @@ export function App() {
       { account_id: accountIdByKey("inventory"), debit: costTotal, credit: 0, description: "Reingreso inventario" },
     ]);
 
-    if (!voidErr && !commErr) setNotice(`Factura ${doc.document_number} anulada`);
+    // 4) Registrar la devolucion del dinero: reembolso (pago negativo) y dejar la factura en pagado = 0.
+    const refunded = Number(doc.paid_amount ?? 0);
+    if (refunded > 0) {
+      await supabase.from("payments").insert({ document_id: doc.id, amount: -refunded, method: "refund" });
+    }
+    await supabase.from("documents").update({ paid_amount: 0 }).eq("id", doc.id);
+
+    if (!voidErr && !commErr) {
+      setNotice(refunded > 0 ? `Factura ${doc.document_number} anulada · devuelto L ${refunded.toLocaleString("es-HN")}` : `Factura ${doc.document_number} anulada`);
+    }
     setDetailDoc(null);
     await loadWorkspace();
   }
@@ -1114,6 +1279,33 @@ export function App() {
       .from("documents")
       .update({ subtotal, total: subtotal, paid_amount: doc.payment_terms === "cash" ? subtotal : doc.paid_amount })
       .eq("id", doc.id);
+
+    // Asiento de AJUSTE por la edicion: solo la diferencia (nuevo - viejo).
+    const oldTaxable = Number(doc.subtotal ?? doc.total) - Number(doc.discount ?? 0);
+    const oldTax = Number(doc.tax ?? 0);
+    const oldTotal = Number(doc.total);
+    const oldCost = detailItems.reduce(
+      (s, it) => s + it.qty * Number(products.find((p) => p.id === it.product_id)?.real_cost ?? 0),
+      0,
+    );
+    const newCost = lines.reduce(
+      (s, l) => s + l.qty * Number(products.find((p) => p.id === l.product_id)?.real_cost ?? 0),
+      0,
+    );
+    const dTotal = subtotal - oldTotal; // el edit deja total = subtotal (sin ISV/descuento)
+    const dTaxable = subtotal - oldTaxable;
+    const dTax = 0 - oldTax;
+    const dCost = newCost - oldCost;
+    const dbPos = (amt: number) => ({ debit: amt >= 0 ? amt : 0, credit: amt < 0 ? -amt : 0 }); // cuentas de saldo deudor
+    const crPos = (amt: number) => ({ debit: amt < 0 ? -amt : 0, credit: amt >= 0 ? amt : 0 }); // cuentas de saldo acreedor
+    const editAsset = doc.payment_terms === "cash" ? accountIdByKey("cash") : accountIdByKey("accounts_receivable");
+    await postJournal(new Date().toISOString().slice(0, 10), `Ajuste edicion factura ${doc.document_number}`, "sale", doc.id, [
+      { account_id: editAsset, ...dbPos(dTotal), description: "Ajuste cobro" },
+      { account_id: accountIdByKey("sales"), ...crPos(dTaxable), description: "Ajuste ventas" },
+      { account_id: accountIdByKey("tax_payable"), ...crPos(dTax), description: "Ajuste ISV" },
+      { account_id: accountIdByKey("cogs"), ...dbPos(dCost), description: "Ajuste costo" },
+      { account_id: accountIdByKey("inventory"), ...crPos(dCost), description: "Ajuste inventario" },
+    ]);
 
     // Recalcular comision si existe.
     const { data: comm } = await supabase.from("seller_commissions").select("id, rate").eq("document_id", doc.id).maybeSingle();
@@ -1191,13 +1383,7 @@ export function App() {
   const sizes = Array.from(new Set(products.map((p) => p.size).filter(Boolean) as string[])).sort();
   const colors = Array.from(new Set(products.map((p) => p.color).filter(Boolean) as string[])).sort();
   const currentRole = users.find((u) => u.id === session?.user?.id)?.role ?? "admin";
-  const rolePermissions: Record<string, ModuleName[]> = {
-    admin: modules.map((m) => m.label),
-    manager: ["Dashboard", "POS", "Inventario", "Facturas", "Kardex", "Vendedores", "Analisis", "Contabilidad", "Clientes", "Proveedores", "Reportes"],
-    warehouse: ["Dashboard", "Inventario", "Proveedores", "Kardex"],
-    sales: ["Dashboard", "POS", "Clientes", "Facturas"],
-  };
-  const allowed = rolePermissions[currentRole] ?? rolePermissions.admin;
+  const allowed = ROLE_PERMISSIONS[currentRole] ?? ROLE_PERMISSIONS.admin;
   const visibleModules = modules.filter((m) => allowed.includes(m.label));
 
   if (!supabase) return <LoginScreen message="Configura Supabase en .env.local para usar el sistema." />;
@@ -1253,12 +1439,16 @@ export function App() {
                 placeholder="Buscar producto, cliente, factura o proveedor"
               />
             </div>
-            <button className="branch-button">
-              <Building2 size={17} /> Todas las sucursales
-            </button>
-            <button className="primary-button" onClick={exportExcel}>
-              <Download size={17} /> Excel
-            </button>
+            {currentRole !== "sales" && (
+              <>
+                <button className="branch-button">
+                  <Building2 size={17} /> Todas las sucursales
+                </button>
+                <button className="primary-button" onClick={exportExcel}>
+                  <Download size={17} /> Excel
+                </button>
+              </>
+            )}
           </div>
         </header>
         {notice && (
@@ -1280,6 +1470,9 @@ export function App() {
             sellers={sellers}
             issueSale={issueSale}
             total={cartTotal}
+            lockSeller={currentRole === "sales"}
+            currentSellerId={sellers.find((s) => s.user_id === session?.user?.id)?.id ?? null}
+            printReceipt={(doc) => void downloadInvoice(doc, false, true)}
           />
         )}
         {selectedModule === "Inventario" && (
@@ -1291,6 +1484,7 @@ export function App() {
             sizes={sizes}
             colors={colors}
             saveProduct={saveProduct}
+            createProductMatrix={createProductMatrix}
             deleteProduct={deleteProduct}
             registerAdjustment={registerAdjustment}
             registerPurchase={registerPurchase}
@@ -1307,6 +1501,24 @@ export function App() {
           <Accounting accounts={accounts} movements={movements} journal={journal} registerMovement={registerMovement} saveAccount={saveAccount} />
         )}
         {selectedModule === "Analisis" && <Analytics products={products} sales={salesLines} />}
+        {selectedModule === "Etiquetas" && <Labels products={products} />}
+        {selectedModule === "Mis ventas" &&
+          (() => {
+            const mySeller = sellers.find((s) => s.user_id === session?.user?.id) ?? null;
+            const mine = mySeller ? commissions.filter((c) => c.seller_id === mySeller.id) : [];
+            return (
+              <MySales
+                sellerName={mySeller?.name ?? null}
+                commissions={mine}
+                goals={mySeller ? goals.filter((g) => g.seller_id === mySeller.id && g.active) : []}
+                bonusPayments={mySeller ? bonusPayments.filter((b) => b.seller_id === mySeller.id) : []}
+                onOpenInvoice={(id) => void openInvoiceById(id)}
+              />
+            );
+          })()}
+        {selectedModule === "Ofertas" && (
+          <Offers products={products} categories={categories} brands={brands} onApply={applyDiscount} onClearAll={clearAllDiscounts} />
+        )}
         {selectedModule === "Clientes" && (
           <Parties rows={customers} title="Clientes" kind="customer" onSave={saveParty} onDelete={deleteParty} />
         )}
@@ -1320,6 +1532,7 @@ export function App() {
         {selectedModule === "Vendedores" && (
           <Sellers
             rows={sellers}
+            users={users}
             commissions={commissions}
             goals={goals}
             bonusPayments={bonusPayments}
@@ -1340,9 +1553,10 @@ export function App() {
           products={products}
           commissionInfo={detailCommission}
           onClose={() => setDetailDoc(null)}
-          onDownload={(d) => downloadInvoice(d, false)}
+          onDownload={(d) => downloadInvoice(d, false, true)}
           onVoid={voidInvoice}
           onSaveEdit={saveInvoiceEdit}
+          readOnly={currentRole === "sales"}
         />
       )}
     </div>

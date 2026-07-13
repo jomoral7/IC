@@ -13,6 +13,7 @@ export type Seller = {
   phone: string | null;
   commission_rate: number; // 0..1 (fraccion). 0.10 = 10%
   active: boolean;
+  user_id: string | null; // usuario del sistema vinculado a este vendedor
 };
 
 export type SellerGoal = {
@@ -41,6 +42,7 @@ export type BonusPayment = {
   goal_id: string;
   period: string; // YYYY-MM-DD (primer dia del mes)
   bonus: number;
+  status: string; // pending | paid
 };
 export type Location = { id: string; name: string };
 
@@ -133,11 +135,20 @@ export type Product = {
   stockByLocation: Record<string, number>;
   /** Unidades pedidas que aun no llegan (pedidos en camino). */
   incoming: number;
+  /** Fecha en que se creo el producto (para no juzgar productos muy nuevos). */
+  created_at?: string | null;
+  /** % de descuento en oferta (0 = sin oferta). Lo configura admin/gerencia. */
+  discount_pct: number;
+  /** Precio final ya con descuento aplicado (calculado). */
+  price_final: number;
 };
 
-export type ProductForm = Omit<Product, "id" | "active" | "stock" | "stockByLocation" | "incoming"> & { stock: number };
+export type ProductForm = Omit<
+  Product,
+  "id" | "active" | "stock" | "stockByLocation" | "incoming" | "discount_pct" | "price_final" | "created_at"
+> & { stock: number };
 
-export type CartLine = Product & { qty: number };
+export type CartLine = Product & { qty: number; base_price?: number };
 
 export type UserProfile = {
   id: string;

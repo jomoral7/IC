@@ -14,6 +14,7 @@ export type InvoiceItem = {
   code: string | null;
   qty: number;
   unit_price: number;
+  original_price?: number; // precio antes del descuento por oferta
   stock: number; // stock actual disponible del producto
 };
 
@@ -32,6 +33,7 @@ export function InvoiceDetailModal({
   onDownload,
   onVoid,
   onSaveEdit,
+  readOnly = false,
 }: {
   doc: any;
   items: InvoiceItem[];
@@ -41,6 +43,8 @@ export function InvoiceDetailModal({
   onDownload: (doc: any) => Promise<void>;
   onVoid: (doc: any, reason: string) => Promise<void>;
   onSaveEdit: (doc: any, lines: InvoiceItem[]) => Promise<void>;
+  /** Si es true (vendedor), solo puede ver e imprimir: sin editar ni anular. */
+  readOnly?: boolean;
 }) {
   const voided = Boolean(doc.voided_at);
   const [mode, setMode] = useState<Mode>("view");
@@ -157,21 +161,52 @@ export function InvoiceDetailModal({
                     <strong>{it.name}</strong>
                     {variantText(it) && <span className="inv-variant-line">{variantText(it)}</span>}
                     <span className="inv-code">{it.code ?? "N/A"}</span>
+                    {it.original_price != null && it.original_price > it.unit_price && (
+                      <span className="ticket-offer">
+                        Oferta · antes <s>{lps(it.original_price)}</s> → {lps(it.unit_price)}
+                      </span>
+                    )}
                   </div>
                   <div className="center">{it.qty}</div>
                   <div className="right">{lps(it.qty * it.unit_price)}</div>
                 </div>
               ))}
-              <div className="invoice-total-row">
-                <span>Total</span>
-                <strong>{lps(viewTotal)}</strong>
-              </div>
+              {(() => {
+                const subtotal = Number(doc.subtotal ?? viewTotal);
+                const discount = Number(doc.discount ?? 0);
+                const tax = Number(doc.tax ?? 0);
+                const docTotal = Number(doc.total ?? subtotal);
+                return (
+                  <>
+                    <div className="invoice-brk-row">
+                      <span>Subtotal</span>
+                      <span>{lps(subtotal)}</span>
+                    </div>
+                    {discount > 0 && (
+                      <div className="invoice-brk-row muted">
+                        <span>Descuento</span>
+                        <span>- {lps(discount)}</span>
+                      </div>
+                    )}
+                    {tax > 0 && (
+                      <div className="invoice-brk-row muted">
+                        <span>ISV (15%)</span>
+                        <span>{lps(tax)}</span>
+                      </div>
+                    )}
+                    <div className="invoice-total-row">
+                      <span>Total facturado</span>
+                      <strong>{lps(docTotal)}</strong>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             <div className="invoice-actions">
               <button className="secondary-button" onClick={() => void onDownload(doc)}>
                 <Printer size={16} /> Imprimir PDF
               </button>
-              {!voided && (
+              {!voided && !readOnly && (
                 <>
                   <button className="primary-button" onClick={() => { setLines(items); setMode("edit"); }}>
                     <Pencil size={16} /> Editar productos

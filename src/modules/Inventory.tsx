@@ -11,12 +11,13 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { AdjustmentDraft, Party, Product, ProductForm, PurchaseLine } from "../types";
 import { ADJUSTMENT_REASONS, CATEGORY_OPTIONS, COLOR_OPTIONS, GENDERS, emptyProduct, sizesForCategory } from "../types";
 import { lps, shortDate, stockState, suggestedRestock } from "../lib/format";
 import { Combobox, EmptyWork } from "../ui";
 import { ScannerModal } from "./Scanner";
+import { LabelScanner, type LabelFields } from "./LabelScanner";
 
 type Filter = "all" | "low" | "orders";
 
@@ -24,6 +25,17 @@ type Filter = "all" | "low" | "orders";
 function mergeOptions(catalog: string[], existing: string[]): string[] {
   const extra = existing.filter((v) => !catalog.includes(v));
   return [...catalog, ...extra];
+}
+
+/** Color aproximado para el cuadrito identificador de cada variante. */
+const COLOR_HEX: Record<string, string> = {
+  negro: "#111111", blanco: "#ffffff", gris: "#9aa3ab", azul: "#1e4fd8", "azul marino": "#1b2a52",
+  celeste: "#7cc4f0", rojo: "#d0342c", vino: "#7b1e2b", verde: "#2e8b57", amarillo: "#f2c200",
+  naranja: "#e8792b", rosado: "#e87fa8", morado: "#7a3fb0", cafe: "#7a4b2b", beige: "#e4d5b7",
+  dorado: "#c9a227", plateado: "#c0c0c0", multicolor: "#888888",
+};
+function colorHex(name: string | null): string {
+  return COLOR_HEX[(name ?? "").toLowerCase()] ?? "#cfd6dc";
 }
 
 export function Inventory({
@@ -34,6 +46,7 @@ export function Inventory({
   sizes,
   colors,
   saveProduct,
+  createProductMatrix,
   deleteProduct,
   registerAdjustment,
   registerPurchase,
@@ -50,6 +63,10 @@ export function Inventory({
   sizes: string[];
   colors: string[];
   saveProduct: (form: ProductForm, id?: string) => Promise<void>;
+  createProductMatrix: (
+    base: { name: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
+    combos: { size: string; color: string; qty: number }[],
+  ) => Promise<void>;
   deleteProduct: (product: Product) => Promise<void>;
   registerAdjustment: (productId: string, quantityDelta: number, reason: string, notes: string) => Promise<void>;
   registerPurchase: (supplierId: string | null, lines: PurchaseLine[]) => Promise<void>;
@@ -67,6 +84,17 @@ export function Inventory({
   const [localQuery, setLocalQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [pedido, setPedido] = useState<Product | null>(null);
+  const [matrixing, setMatrixing] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleGroup(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const searched = useMemo(() => {
     const q = localQuery.trim().toLowerCase();
@@ -81,6 +109,18 @@ export function Inventory({
   }, [products, localQuery]);
 
   const visible = filter === "low" ? searched.filter((p) => stockState(p.stock, p.min_stock) !== "ok") : searched;
+
+  // Agrupar variantes bajo su producto base (mismo nombre + marca).
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; name: string; brand: string | null; category: string; items: Product[] }>();
+    for (const p of visible) {
+      const key = `${p.name}||${p.brand ?? ""}`;
+      const g = map.get(key) ?? { key, name: p.name, brand: p.brand, category: p.category, items: [] };
+      g.items.push(p);
+      map.set(key, g);
+    }
+    return Array.from(map.values());
+  }, [visible]);
 
   const units = products.reduce((sum, product) => sum + product.stock, 0);
   const lowCount = products.filter((p) => stockState(p.stock, p.min_stock) !== "ok").length;
@@ -140,6 +180,9 @@ export function Inventory({
             <button className="secondary-button" onClick={() => setPurchasing(true)}>
               <Truck size={16} /> Entrada de pedido
             </button>
+            <button className="secondary-button" onClick={() => setMatrixing(true)}>
+              <PackagePlus size={16} /> Crear por matriz
+            </button>
             <button className="primary-button" onClick={() => setCreating(true)}>
               <Plus size={16} /> Nuevo producto
             </button>
@@ -180,16 +223,34 @@ export function Inventory({
                 </tr>
               </thead>
               <tbody>
-                {visible.map((product) => (
-                  <ProductRow
-                    key={product.id}
-                    product={product}
-                    onEdit={() => setEditing(product)}
-                    onAdjust={() => setAdjusting(product)}
-                    onPedido={() => setPedido(product)}
-                    onDelete={() => void deleteProduct(product)}
-                  />
-                ))}
+                {groups.map((g) =>
+                  g.items.length === 1 ? (
+                    <ProductRow
+                      key={g.items[0].id}
+                      product={g.items[0]}
+                      onEdit={() => setEditing(g.items[0])}
+                      onAdjust={() => setAdjusting(g.items[0])}
+                      onPedido={() => setPedido(g.items[0])}
+                      onDelete={() => void deleteProduct(g.items[0])}
+                    />
+                  ) : (
+                    <Fragment key={g.key}>
+                      <GroupRow group={g} open={expanded.has(g.key)} onToggle={() => toggleGroup(g.key)} />
+                      {expanded.has(g.key) &&
+                        g.items.map((product) => (
+                          <ProductRow
+                            key={product.id}
+                            product={product}
+                            indent
+                            onEdit={() => setEditing(product)}
+                            onAdjust={() => setAdjusting(product)}
+                            onPedido={() => setPedido(product)}
+                            onDelete={() => void deleteProduct(product)}
+                          />
+                        ))}
+                    </Fragment>
+                  ),
+                )}
               </tbody>
             </table>
           </div>
@@ -241,18 +302,86 @@ export function Inventory({
           onSave={registerPurchase}
         />
       )}
+      {matrixing && (
+        <MatrixModal
+          suppliers={suppliers}
+          categories={categories}
+          brands={brands}
+          colors={colors}
+          sizes={sizes}
+          onClose={() => setMatrixing(false)}
+          onSave={createProductMatrix}
+        />
+      )}
     </>
+  );
+}
+
+function GroupRow({
+  group,
+  open,
+  onToggle,
+}: {
+  group: { key: string; name: string; brand: string | null; category: string; items: Product[] };
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const totalStock = group.items.reduce((s, p) => s + p.stock, 0);
+  const incoming = group.items.reduce((s, p) => s + p.incoming, 0);
+  const anyOut = group.items.some((p) => stockState(p.stock, p.min_stock) === "out");
+  const anyLow = group.items.some((p) => stockState(p.stock, p.min_stock) === "low");
+  const state = anyOut ? "out" : anyLow ? "low" : "ok";
+  const stateLabel = state === "out" ? "Hay agotados" : state === "low" ? "Hay stock bajo" : "En stock";
+  const anyOffer = group.items.some((p) => p.discount_pct > 0);
+  const prices = group.items.map((p) => (p.discount_pct > 0 ? p.price_final : p.sale_price));
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const priceText = minP === maxP ? lps(minP) : `${lps(minP)} – ${lps(maxP)}`;
+  return (
+    <tr className="group-row" onClick={onToggle}>
+      <td>
+        <strong>
+          <span className="group-caret">{open ? "▾" : "▸"}</span> {group.name}
+        </strong>
+        <span className="inv-code">{group.items.length} variantes</span>
+      </td>
+      <td>
+        <strong className="inv-cat">{group.category || "Sin categoria"}</strong>
+        <span className="inv-code">{group.brand || "Sin marca"}</span>
+      </td>
+      <td className={`num ${state !== "ok" ? "stock-alert" : ""}`}>
+        <strong>{totalStock}</strong>
+        {incoming > 0 && <span className="incoming-tag">+{incoming} en camino</span>}
+      </td>
+      <td className="num muted">—</td>
+      <td className="num muted">—</td>
+      <td className="num">
+        {priceText}
+        {anyOffer && <span className="inv-offer-tag">oferta</span>}
+      </td>
+      <td className="num muted">—</td>
+      <td className="center">
+        <span className={`stock-badge ${state}`}>{stateLabel}</span>
+      </td>
+      <td className="actions-col">
+        <button className="mini-button" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+          {open ? "Cerrar" : "Ver variantes"}
+        </button>
+      </td>
+    </tr>
   );
 }
 
 function ProductRow({
   product,
+  indent = false,
   onEdit,
   onAdjust,
   onPedido,
   onDelete,
 }: {
   product: Product;
+  indent?: boolean;
   onEdit: () => void;
   onAdjust: () => void;
   onPedido: () => void;
@@ -261,17 +390,23 @@ function ProductRow({
   const state = stockState(product.stock, product.min_stock);
   const stateLabel = state === "out" ? "Agotado" : state === "low" ? "Stock bajo" : "En stock";
   const variant = [product.brand, product.size, product.color, product.gender].filter(Boolean).join(" · ");
-  const profit = product.sale_price - product.real_cost;
+  const onOffer = product.discount_pct > 0;
+  // Precio y ganancia reales: si esta en oferta, se usa el precio rebajado.
+  const effectivePrice = onOffer ? product.price_final : product.sale_price;
+  const profit = effectivePrice - product.real_cost;
   const profitPct = product.real_cost > 0 ? Math.round((profit / product.real_cost) * 100) : 0;
   return (
-    <tr>
+    <tr className={indent ? "variant-child" : ""}>
       <td>
-        <strong>{product.name}</strong>
+        <strong className={indent ? "child-name" : ""}>{product.name}</strong>
         <span className="inv-code">{product.internal_code ?? product.sku}</span>
       </td>
       <td>
         <strong className="inv-cat">{product.category || "Sin categoria"}</strong>
-        <span className="inv-code">{variant || "Sin variante"}</span>
+        <span className="inv-code">
+          {product.color && <span className="color-dot" style={{ background: colorHex(product.color) }} />}
+          {variant || "Sin variante"}
+        </span>
       </td>
       <td className={`num ${state !== "ok" ? "stock-alert" : ""}`}>
         <strong>{product.stock}</strong>
@@ -279,7 +414,17 @@ function ProductRow({
       </td>
       <td className="num muted">{product.min_stock}</td>
       <td className="num muted">{lps(product.real_cost)}</td>
-      <td className="num">{lps(product.sale_price)}</td>
+      <td className="num">
+        {onOffer ? (
+          <>
+            <span style={{ textDecoration: "line-through", color: "#98a2ac", fontSize: 12 }}>{lps(product.sale_price)}</span>{" "}
+            <strong>{lps(product.price_final)}</strong>
+            <span className="inv-offer-tag">-{product.discount_pct}%</span>
+          </>
+        ) : (
+          lps(product.sale_price)
+        )}
+      </td>
       <td className="num">
         <strong className={profit >= 0 ? "profit-pos" : "profit-neg"}>{lps(profit)}</strong>
         {product.real_cost > 0 && <span className="inv-code">{profitPct}%</span>}
@@ -578,9 +723,22 @@ function ProductDrawer({
       : emptyProduct,
   );
   const [saving, setSaving] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
 
   function set<K extends keyof ProductForm>(key: K, value: ProductForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  // Rellena el formulario con lo leido de la etiqueta (solo campos con valor).
+  function applyLabel(f: LabelFields) {
+    setForm((current) => ({
+      ...current,
+      name: f.name?.trim() || current.name,
+      brand: f.brand?.trim() || current.brand,
+      category: f.category?.trim() || current.category,
+      size: f.size?.trim() || current.size,
+      color: f.color?.trim() || current.color,
+    }));
   }
 
   // Sugerencias de talla segun la categoria elegida (+ tallas ya usadas). Escribible.
@@ -611,6 +769,9 @@ function ProductDrawer({
           </button>
         </div>
 
+        <button className="secondary-button wide label-scan-btn" onClick={() => setLabelOpen(true)}>
+          <ScanLine size={16} /> Leer etiqueta con foto
+        </button>
 
         <div className="form-section">
           <h3>Identificacion</h3>
@@ -623,6 +784,12 @@ function ProductDrawer({
               QR / barra
               <input value={form.qr_payload ?? ""} readOnly placeholder="Automatico al guardar" />
             </label>
+            {product?.created_at && (
+              <label className="span-2">
+                Fecha de ingreso
+                <input value={new Date(product.created_at).toLocaleDateString("es-HN")} readOnly />
+              </label>
+            )}
           </div>
         </div>
 
@@ -704,6 +871,7 @@ function ProductDrawer({
           <Save size={18} /> {saving ? "Guardando..." : "Guardar producto"}
         </button>
       </aside>
+      {labelOpen && <LabelScanner onApply={applyLabel} onClose={() => setLabelOpen(false)} />}
     </div>
   );
 }
@@ -943,6 +1111,213 @@ function PurchaseModal({
         </div>
         <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
           <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada y sumar stock"}
+        </button>
+      </aside>
+    </div>
+  );
+}
+
+function MatrixModal({
+  suppliers,
+  categories,
+  brands,
+  colors,
+  sizes,
+  onClose,
+  onSave,
+}: {
+  suppliers: Party[];
+  categories: string[];
+  brands: string[];
+  colors: string[];
+  sizes: string[];
+  onClose: () => void;
+  onSave: (
+    base: { name: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
+    combos: { size: string; color: string; qty: number }[],
+  ) => Promise<void>;
+}) {
+  const [base, setBase] = useState({
+    name: "",
+    category: "",
+    brand: "",
+    gender: "Unisex",
+    supplier_id: "",
+    real_cost: 0,
+    sale_price: 0,
+    min_stock: 0,
+  });
+  type Row = { size: string; color: string; qty: number; sizeCustom?: boolean; colorCustom?: boolean };
+  const [rows, setRows] = useState<Row[]>([{ size: "", color: "", qty: 1 }]);
+  const [saving, setSaving] = useState(false);
+
+  const sizeCatalog = mergeOptions(sizesForCategory(base.category), sizes);
+  const colorCatalog = mergeOptions(COLOR_OPTIONS, colors);
+  const categoryOptions = mergeOptions(CATEGORY_OPTIONS, categories);
+
+  function setRow(i: number, patch: Partial<Row>) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+  function addRow() {
+    // La nueva fila hereda la talla de la anterior (util para repetir talla y cambiar color).
+    const last = rows[rows.length - 1];
+    setRows((prev) => [...prev, { size: last?.size ?? "", color: "", qty: 1 }]);
+  }
+  function removeRow(i: number) {
+    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
+  }
+
+  const validRows = rows.filter((r) => (r.size.trim() || r.color.trim()) && r.qty >= 0);
+  const totalUnits = validRows.reduce((sum, r) => sum + r.qty, 0);
+  const canSave = base.name.trim().length > 0 && base.sale_price > 0 && validRows.length > 0 && !saving;
+
+  async function submit() {
+    if (!canSave) return;
+    setSaving(true);
+    await onSave(
+      {
+        name: base.name,
+        category: base.category,
+        brand: base.brand,
+        gender: base.gender,
+        supplier_id: base.supplier_id || null,
+        real_cost: base.real_cost,
+        sale_price: base.sale_price,
+        min_stock: base.min_stock,
+      },
+      validRows.map((r) => ({ size: r.size.trim(), color: r.color.trim(), qty: r.qty })),
+    );
+    setSaving(false);
+    onClose();
+  }
+
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="panel-heading">
+          <div>
+            <p className="section-label">Alta rapida</p>
+            <h2>Crear por matriz (talla x color)</h2>
+          </div>
+          <button className="icon-button" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="mini-note">Datos comunes arriba. Abajo agrega una fila por cada variante (talla + color + cantidad).</p>
+
+        <div className="form-section">
+          <div className="form-grid two">
+            <label className="span-2">
+              Nombre <em className="req">*</em>
+              <input value={base.name} onChange={(e) => setBase({ ...base, name: e.target.value })} placeholder="Ej. Camisa polo manga corta" />
+            </label>
+            <label>
+              Categoria
+              <Combobox value={base.category} onChange={(v) => setBase({ ...base, category: v })} options={categoryOptions} placeholder="Elige o escribe" />
+            </label>
+            <label>
+              Marca
+              <Combobox value={base.brand} onChange={(v) => setBase({ ...base, brand: v })} options={brands} placeholder="Escribe o elige" />
+            </label>
+            <label>
+              Genero
+              <select value={base.gender} onChange={(e) => setBase({ ...base, gender: e.target.value })}>
+                {GENDERS.map((g) => (
+                  <option key={g}>{g}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Proveedor
+              <select value={base.supplier_id} onChange={(e) => setBase({ ...base, supplier_id: e.target.value })}>
+                <option value="">Sin proveedor</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Costo real
+              <input type="number" min={0} value={base.real_cost} onChange={(e) => setBase({ ...base, real_cost: Number(e.target.value) })} />
+            </label>
+            <label>
+              Precio venta <em className="req">*</em>
+              <input type="number" min={0} value={base.sale_price} onChange={(e) => setBase({ ...base, sale_price: Number(e.target.value) })} />
+            </label>
+            <label>
+              Minimo (alerta)
+              <input type="number" min={0} value={base.min_stock} onChange={(e) => setBase({ ...base, min_stock: Number(e.target.value) })} />
+            </label>
+          </div>
+        </div>
+
+        <div className="form-section">
+          <div className="matrix-head">
+            <h3>Variantes · {validRows.length} · {totalUnits} unidades</h3>
+            <button className="secondary-button" onClick={addRow}>
+              <Plus size={14} /> Agregar variante
+            </button>
+          </div>
+          <div className="variant-table">
+            <div className="variant-row variant-head">
+              <span>Talla</span>
+              <span>Color</span>
+              <span>Cantidad</span>
+              <span></span>
+            </div>
+            {rows.map((r, i) => (
+              <div className="variant-row" key={i}>
+                {r.sizeCustom ? (
+                  <input value={r.size} autoFocus placeholder="Escribe la talla" onChange={(e) => setRow(i, { size: e.target.value })} />
+                ) : (
+                  <select
+                    value={sizeCatalog.includes(r.size) ? r.size : ""}
+                    onChange={(e) => (e.target.value === "__otro__" ? setRow(i, { sizeCustom: true, size: "" }) : setRow(i, { size: e.target.value }))}
+                  >
+                    <option value="">Talla…</option>
+                    {sizeCatalog.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                    <option value="__otro__">Otro…</option>
+                  </select>
+                )}
+                {r.colorCustom ? (
+                  <input value={r.color} autoFocus placeholder="Escribe el color" onChange={(e) => setRow(i, { color: e.target.value })} />
+                ) : (
+                  <select
+                    value={colorCatalog.includes(r.color) ? r.color : ""}
+                    onChange={(e) => (e.target.value === "__otro__" ? setRow(i, { colorCustom: true, color: "" }) : setRow(i, { color: e.target.value }))}
+                  >
+                    <option value="">Color…</option>
+                    {colorCatalog.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="__otro__">Otro…</option>
+                  </select>
+                )}
+                <input
+                  type="number"
+                  min={0}
+                  value={r.qty}
+                  onChange={(e) => setRow(i, { qty: Math.max(0, Number(e.target.value)) })}
+                />
+                <button className="icon-action danger" title="Quitar" onClick={() => removeRow(i)} disabled={rows.length <= 1}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+          <Save size={18} /> {saving ? "Creando..." : `Crear ${validRows.length} variante(s)`}
         </button>
       </aside>
     </div>

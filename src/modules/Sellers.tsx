@@ -1,10 +1,10 @@
 import { Edit3, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { BonusPayment, Commission, Seller, SellerGoal } from "../types";
+import type { BonusPayment, Commission, Seller, SellerGoal, UserProfile } from "../types";
 import { lps, shortDate } from "../lib/format";
 import { EmptyWork } from "../ui";
 
-type SellerForm = { name: string; code: string; phone: string; commissionPct: number; active: boolean };
+type SellerForm = { name: string; code: string; phone: string; commissionPct: number; active: boolean; userId: string };
 
 function currentPeriod(): string {
   const d = new Date();
@@ -18,6 +18,7 @@ function sameMonth(iso: string): boolean {
 
 export function Sellers({
   rows,
+  users,
   commissions,
   goals,
   bonusPayments,
@@ -30,10 +31,11 @@ export function Sellers({
   onOpenInvoice,
 }: {
   rows: Seller[];
+  users: UserProfile[];
   commissions: Commission[];
   goals: SellerGoal[];
   bonusPayments: BonusPayment[];
-  onSave: (form: { name: string; code: string; phone: string; commission_rate: number; active: boolean }, id?: string) => Promise<void>;
+  onSave: (form: { name: string; code: string; phone: string; commission_rate: number; active: boolean; user_id: string | null }, id?: string) => Promise<void>;
   onDelete: (seller: Seller) => Promise<void>;
   onPayCommission: (commissionId: string) => Promise<void>;
   onSaveGoal: (sellerId: string, form: { name: string; min_sales: number; bonus: number }, id?: string) => Promise<void>;
@@ -126,6 +128,7 @@ export function Sellers({
       {(creating || editing) && (
         <SellerDrawer
           seller={editing}
+          users={users}
           goals={editing ? goals.filter((g) => g.seller_id === editing.id) : []}
           onClose={() => {
             setCreating(false);
@@ -133,7 +136,14 @@ export function Sellers({
           }}
           onSave={(form, id) =>
             onSave(
-              { name: form.name, code: form.code, phone: form.phone, commission_rate: form.commissionPct / 100, active: form.active },
+              {
+                name: form.name,
+                code: form.code,
+                phone: form.phone,
+                commission_rate: form.commissionPct / 100,
+                active: form.active,
+                user_id: form.userId || null,
+              },
               id,
             )
           }
@@ -254,7 +264,7 @@ function SellerPanel({
           const tiers = [...goals].sort((a, b) => a.min_sales - b.min_sales);
           const reached = tiers.filter((g) => monthSales >= g.min_sales);
           const applicable = reached.length ? reached[reached.length - 1] : null;
-          const paidThisMonth = bonusPayments.some((b) => b.period === period);
+          const paidThisMonth = bonusPayments.some((b) => b.period === period && b.status === "paid");
           const topMeta = tiers.length ? tiers[tiers.length - 1].min_sales : 0;
           const pct = topMeta > 0 ? Math.min(100, Math.round((monthSales / topMeta) * 100)) : 0;
           return (
@@ -310,6 +320,7 @@ function SellerPanel({
 
 function SellerDrawer({
   seller,
+  users,
   goals,
   onClose,
   onSave,
@@ -317,6 +328,7 @@ function SellerDrawer({
   onDeleteGoal,
 }: {
   seller: Seller | null;
+  users: UserProfile[];
   goals: SellerGoal[];
   onClose: () => void;
   onSave: (form: SellerForm, id?: string) => Promise<void>;
@@ -329,6 +341,7 @@ function SellerDrawer({
     phone: seller?.phone ?? "",
     commissionPct: seller ? Math.round(seller.commission_rate * 100) : 10,
     active: seller?.active ?? true,
+    userId: seller?.user_id ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [goalName, setGoalName] = useState("");
@@ -386,6 +399,17 @@ function SellerDrawer({
               value={form.commissionPct}
               onChange={(e) => setForm({ ...form, commissionPct: Number(e.target.value) })}
             />
+          </label>
+          <label>
+            Usuario del sistema (para que venda con su login)
+            <select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>
+              <option value="">Sin usuario vinculado</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.username || u.id}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="check-row">
             <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />

@@ -21,6 +21,9 @@ export function POS({
   sellers,
   issueSale,
   total,
+  lockSeller = false,
+  currentSellerId = null,
+  printReceipt,
 }: {
   products: Product[];
   cart: CartLine[];
@@ -28,8 +31,14 @@ export function POS({
   addToCart: (product: Product) => void;
   customers: Party[];
   sellers: Seller[];
-  issueSale: (customerName: string, sellerId: string | null, terms: "cash" | "credit", discountPct: number, applyTax: boolean) => Promise<void>;
+  issueSale: (customerName: string, sellerId: string | null, terms: "cash" | "credit", discountPct: number, applyTax: boolean) => Promise<any>;
   total: number;
+  /** Si es true (rol vendedor), el vendedor queda fijo y no puede elegir otro. */
+  lockSeller?: boolean;
+  /** Vendedor vinculado al usuario actual. */
+  currentSellerId?: string | null;
+  /** Genera el comprobante (PDF cliente) de la venta recien hecha. */
+  printReceipt: (doc: any) => void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [sellerId, setSellerId] = useState("");
@@ -40,15 +49,23 @@ export function POS({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
   const [applyTax, setApplyTax] = useState(false);
+  const [lastSale, setLastSale] = useState<any | null>(null);
 
   const subtotal = total;
+  // Cuanto se ahorra el cliente por productos en oferta (base - precio de venta).
+  const offerSavings = cart.reduce(
+    (s, l) => s + Math.max(0, ((l.base_price ?? l.sale_price) - l.sale_price) * l.qty),
+    0,
+  );
   const discountAmt = Math.max(0, Number((subtotal * (discountPct / 100)).toFixed(2)));
   const taxable = subtotal - discountAmt;
   const tax = applyTax ? Number((taxable * 0.15).toFixed(2)) : 0;
   const grandTotal = taxable + tax;
 
   const activeSellers = useMemo(() => sellers.filter((s) => s.active), [sellers]);
-  const selectedSeller = activeSellers.find((s) => s.id === sellerId) ?? null;
+  // Si el usuario es vendedor, su vendedor queda fijo; si no, usa el elegido.
+  const effectiveSellerId = lockSeller ? currentSellerId ?? "" : sellerId;
+  const selectedSeller = sellers.find((s) => s.id === effectiveSellerId) ?? null;
   const commission = selectedSeller ? taxable * selectedSeller.commission_rate : 0;
 
   const shown = useMemo(() => {
@@ -80,8 +97,13 @@ export function POS({
   async function submit() {
     if (cart.length === 0 || issuing) return;
     setIssuing(true);
-    await issueSale(customerName.trim(), sellerId || null, terms, discountPct, applyTax);
+    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, discountPct, applyTax);
     setIssuing(false);
+    if (doc) {
+      setLastSale(doc);
+      // Muestra el comprobante automaticamente al generar la venta.
+      printReceipt(doc);
+    }
     setCustomerName("");
     setSellerId("");
     setDiscountPct(0);
@@ -121,7 +143,14 @@ export function POS({
                 <em className={stockState(product.stock, product.min_stock) !== "ok" ? "stock-alert" : ""}>
                   {product.stock} disp.
                 </em>
-                <b>{lps(product.sale_price)}</b>
+                {product.discount_pct > 0 ? (
+                  <b className="pos-price-offer">
+                    <span className="pos-price-old">{lps(product.sale_price)}</span>
+                    {lps(product.price_final)} <span className="pos-offer-tag">-{product.discount_pct}%</span>
+                  </b>
+                ) : (
+                  <b>{lps(product.sale_price)}</b>
+                )}
               </button>
             ))}
           </div>
@@ -150,14 +179,21 @@ export function POS({
 
         <label>
           Vendedor
-          <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
-            <option value="">Sin vendedor</option>
-            {activeSellers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({Math.round(s.commission_rate * 100)}%)
-              </option>
-            ))}
-          </select>
+          {lockSeller ? (
+            <input
+              readOnly
+              value={selectedSeller ? selectedSeller.name : "Tu usuario no esta vinculado a un vendedor"}
+            />
+          ) : (
+            <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
+              <option value="">Sin vendedor</option>
+              {activeSellers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({Math.round(s.commission_rate * 100)}%)
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
         <div className="payment-toggle">
@@ -179,6 +215,11 @@ export function POS({
                 <div className="ticket-info">
                   <strong>{line.name}</strong>
                   <span>{line.internal_code ?? line.sku}</span>
+                  {line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
+                    <span className="ticket-offer">
+                      Oferta -{line.discount_pct}% · antes <s>{lps(line.base_price)}</s>
+                    </span>
+                  )}
                 </div>
                 <button className="ticket-remove" title="Quitar" onClick={() => setCart(cart.filter((item) => item.id !== line.id))}>
                   <X size={15} />
@@ -195,7 +236,10 @@ export function POS({
                   </button>
                 </div>
                 <div className="price-cell">
-                  {editingId === line.id ? (
+                  {lockSeller ? (
+                    // El vendedor NO puede cambiar el precio: solo lo ve.
+                    <span className="price-fixed">{lps(line.sale_price)}</span>
+                  ) : editingId === line.id ? (
                     <div className="price-edit-box">
                       <input
                         autoFocus
@@ -231,23 +275,31 @@ export function POS({
         )}
 
         <div className="sale-breakdown">
+          {offerSavings > 0 && (
+            <div className="brk-row muted">
+              <span>Ahorro por ofertas</span>
+              <b>- {lps(offerSavings)}</b>
+            </div>
+          )}
           <div className="brk-row">
             <span>Subtotal</span>
             <b>{lps(subtotal)}</b>
           </div>
-          <label className="brk-row brk-input">
-            <span>Descuento %</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={discountPct}
-              onChange={(e) => setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))))}
-            />
-          </label>
+          {!lockSeller && (
+            <label className="brk-row brk-input">
+              <span>Descuento extra %</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={discountPct}
+                onChange={(e) => setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))))}
+              />
+            </label>
+          )}
           {discountAmt > 0 && (
             <div className="brk-row muted">
-              <span>Descuento</span>
+              <span>Descuento extra</span>
               <b>- {lps(discountAmt)}</b>
             </div>
           )}
@@ -269,7 +321,16 @@ export function POS({
         <button className="primary-button wide" disabled={cart.length === 0 || issuing} onClick={() => void submit()}>
           <FileText size={18} /> {issuing ? "Generando..." : "Generar factura"}
         </button>
-        <button className="secondary-button wide" onClick={() => setCart([])}>
+        {lastSale && (
+          <div className="last-sale-note">
+            <strong>✓ Venta #{lastSale.document_number} generada</strong>
+            <span>Total L {Number(lastSale.total).toLocaleString("es-HN")}</span>
+            <button className="secondary-button wide" onClick={() => printReceipt(lastSale)}>
+              <FileText size={16} /> Ver / imprimir comprobante
+            </button>
+          </div>
+        )}
+        <button className="secondary-button wide" onClick={() => { setCart([]); setLastSale(null); }}>
           Limpiar venta
         </button>
       </aside>
