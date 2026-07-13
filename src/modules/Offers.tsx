@@ -1,4 +1,4 @@
-import { Save, Search, Tag, Trash2 } from "lucide-react";
+import { Search, Tag, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Product } from "../types";
 import { lps } from "../lib/format";
