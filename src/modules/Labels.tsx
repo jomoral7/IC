@@ -25,6 +25,20 @@ function gridOf(size: SizeKey) {
   return { cols, rows, perPage: cols * rows };
 }
 
+function productVariant(product: Product): string {
+  return [product.brand, product.size, product.color, product.gender].filter(Boolean).join(" · ");
+}
+
+function labelInfo(product: Product) {
+  return {
+    payload: product.qr_payload || product.internal_code || product.sku,
+    code: product.internal_code || product.sku,
+    name: product.name,
+    category: product.category || "",
+    variant: productVariant(product),
+  };
+}
+
 export function Labels({ products }: { products: Product[] }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Map<string, number>>(new Map());
@@ -35,7 +49,11 @@ export function Labels({ products }: { products: Product[] }) {
     const q = query.trim().toLowerCase();
     if (!q) return products;
     return products.filter((p) =>
-      [p.name, p.internal_code, p.sku, p.barcode, p.brand].filter(Boolean).join(" ").toLowerCase().includes(q),
+      [p.name, p.internal_code, p.sku, p.barcode, p.brand, p.category, p.size, p.color, p.gender]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
     );
   }, [products, query]);
 
@@ -57,13 +75,12 @@ export function Labels({ products }: { products: Product[] }) {
 
   // Expande la seleccion por cantidad y genera los QR (cache por payload).
   async function buildLabels() {
-    const labels: { payload: string; code: string; name: string }[] = [];
+    const labels: { payload: string; code: string; name: string; category: string; variant: string }[] = [];
     for (const [id, qty] of selected) {
       const p = products.find((x) => x.id === id);
       if (!p) continue;
-      const payload = p.qr_payload || p.internal_code || p.sku;
-      const code = p.internal_code || p.sku;
-      for (let i = 0; i < qty; i++) labels.push({ payload, code, name: p.name });
+      const info = labelInfo(p);
+      for (let i = 0; i < qty; i++) labels.push(info);
     }
     const cache = new Map<string, string>();
     for (const l of labels) {
@@ -87,6 +104,7 @@ export function Labels({ products }: { products: Product[] }) {
             <img src="${cache.get(l.payload)}" />
             <div class="code">${esc(l.code)}</div>
             <div class="name">${esc(l.name)}</div>
+            <div class="variant">${esc(l.variant || l.category)}</div>
           </div>`,
         )
         .join("");
@@ -99,8 +117,9 @@ export function Labels({ products }: { products: Product[] }) {
           .cell { width: ${cellW}mm; height: ${cellH}mm; display: flex; flex-direction: column; align-items: center;
                   padding-top: 1mm; text-align: center; overflow: hidden; break-inside: avoid; }
           .cell img { width: ${qr}mm; height: ${qr}mm; }
-          .code { font-weight: bold; font-size: 8pt; margin-top: 1mm; }
-          .name { font-size: 6pt; line-height: 1.1; max-height: 7mm; overflow: hidden; padding: 0 1mm; }
+          .code { font-weight: bold; font-size: 8pt; margin-top: .8mm; }
+          .name { font-weight: bold; font-size: 5.8pt; line-height: 1.05; max-height: 5.8mm; overflow: hidden; padding: 0 1mm; }
+          .variant { font-size: 5.2pt; line-height: 1.05; max-height: 5.6mm; overflow: hidden; color: #425466; padding: 0 1mm; }
         </style></head>
         <body><div class="sheet">${cells}</div></body></html>`;
 
@@ -137,13 +156,12 @@ export function Labels({ products }: { products: Product[] }) {
     setGenerating(true);
     try {
       // Expandir por cantidad.
-      const labels: { payload: string; code: string; name: string }[] = [];
+      const labels: { payload: string; code: string; name: string; category: string; variant: string }[] = [];
       for (const [id, qty] of selected) {
         const p = products.find((x) => x.id === id);
         if (!p) continue;
-        const payload = p.qr_payload || p.internal_code || p.sku;
-        const code = p.internal_code || p.sku;
-        for (let i = 0; i < qty; i++) labels.push({ payload, code, name: p.name });
+        const info = labelInfo(p);
+        for (let i = 0; i < qty; i++) labels.push(info);
       }
       // Generar QR unicos (cache por payload).
       const cache = new Map<string, string>();
@@ -173,14 +191,21 @@ export function Labels({ products }: { products: Product[] }) {
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(7);
         pdf.text(l.code, cx, y + qr + 3.5, { align: "center" });
-        // Nombre: se acomoda en hasta 2 lineas sin cortarse
+        // Nombre y variante: se acomodan compactos para que la etiqueta identifique talla/color.
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(5.5);
-        const nameLines = (pdf.splitTextToSize(l.name, cellW - 3) as string[]).slice(0, 2);
+        pdf.setFontSize(size === "chica" ? 4.8 : 5.4);
+        const nameLines = (pdf.splitTextToSize(l.name, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
         let ty = y + qr + 7.5;
         for (const line of nameLines) {
           pdf.text(line, cx, ty, { align: "center" });
-          ty += 3;
+          ty += size === "chica" ? 2.6 : 3;
+        }
+        const variantLines = (pdf.splitTextToSize(l.variant || l.category, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
+        pdf.setTextColor("#425466");
+        pdf.setFontSize(size === "chica" ? 4.2 : 4.8);
+        for (const line of variantLines) {
+          pdf.text(line, cx, ty, { align: "center" });
+          ty += 2.5;
         }
       });
       if (mode === "print") {
@@ -221,7 +246,10 @@ export function Labels({ products }: { products: Product[] }) {
               <button key={p.id} className="labels-item" onClick={() => add(p.id)}>
                 <div>
                   <strong>{p.name}</strong>
-                  <span>{p.internal_code ?? p.sku}</span>
+                  <span className="labels-code">{p.internal_code ?? p.sku}</span>
+                  <span className="labels-meta">
+                    {[p.category, p.brand, p.size, p.color, p.gender].filter(Boolean).join(" · ") || "Sin variante"}
+                  </span>
                 </div>
                 <Plus size={16} />
               </button>
@@ -260,7 +288,8 @@ export function Labels({ products }: { products: Product[] }) {
                 <div className="labels-sel-row" key={id}>
                   <div className="labels-sel-info">
                     <strong>{p.name}</strong>
-                    <span>{p.internal_code ?? p.sku}</span>
+                    <span className="labels-code">{p.internal_code ?? p.sku}</span>
+                    <span className="labels-meta">{[p.brand, p.size, p.color].filter(Boolean).join(" · ") || p.category}</span>
                   </div>
                   <div className="qty-stepper">
                     <button onClick={() => setQty(id, qty - 1)} aria-label="Menos">

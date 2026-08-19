@@ -119,10 +119,26 @@ export function POS({
         <div className="pos-searchbar">
           <div className="inv-search">
             <Search size={16} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar o escanear producto por nombre / codigo" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // El lector USB "escribe" el codigo y manda Enter: agrega el producto solo.
+                if (e.key === "Enter") {
+                  const code = query.trim();
+                  const found = code ? products.find((p) => matchesCode(p, code)) : undefined;
+                  if (found) {
+                    if (found.stock > 0) addToCart(found);
+                    setQuery("");
+                  }
+                }
+              }}
+              placeholder="Buscar o escanear producto por nombre / codigo"
+            />
           </div>
           <button className="secondary-button" onClick={() => setScanning(true)}>
-            <ScanLine size={16} /> Escanear
+            <ScanLine size={16} /> Escanear (camara)
           </button>
         </div>
         <div className="pos-table-head">

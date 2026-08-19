@@ -144,8 +144,8 @@ export function App() {
     setLoading(true);
     const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes] =
       await Promise.all([
-        supabase.from("products").select("*").eq("active", true).order("name"),
-        supabase.from("stock_levels").select("product_id, quantity, location_id"),
+        supabase.from("products").select("*").eq("active", true).order("name").limit(10000),
+        supabase.from("stock_levels").select("product_id, quantity, location_id").limit(20000),
         supabase.from("parties").select("id, name, kind, tax_id, phone").eq("kind", "supplier").order("name"),
         supabase.from("parties").select("id, name, kind, tax_id, phone").eq("kind", "customer").order("name"),
         supabase.from("inventory_locations").select("id, name").order("name"),
