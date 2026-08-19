@@ -1,4 +1,4 @@
-import { Check, FileText, Minus, Pencil, Plus, ScanLine, Search, X } from "lucide-react";
+import { Check, ChevronDown, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CartLine, Party, Product, Seller } from "../types";
 import { lps, stockState } from "../lib/format";
@@ -53,6 +53,8 @@ export function POS({
   const [discountPct, setDiscountPct] = useState(0);
   const [applyTax, setApplyTax] = useState(false);
   const [lastSale, setLastSale] = useState<any | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [scanMessage, setScanMessage] = useState("");
 
   const subtotal = total;
   // Cuanto se ahorra el cliente por productos en oferta (base - precio de venta).
@@ -83,10 +85,17 @@ export function POS({
   function handleScan(code: string) {
     const found = products.find((p) => matchesCode(p, code));
     if (found) {
-      if (found.stock > 0) addToCart(found);
+      if (found.stock > 0) {
+        addToCart(found);
+        setSummaryOpen(true);
+        setScanMessage(`${found.name} agregado al carrito`);
+      } else {
+        setScanMessage(`${found.name} no tiene stock disponible`);
+      }
       setQuery("");
     } else {
       setQuery(code);
+      setScanMessage(`No encontre producto para: ${code}`);
     }
   }
 
@@ -129,7 +138,13 @@ export function POS({
                   const code = query.trim();
                   const found = code ? products.find((p) => matchesCode(p, code)) : undefined;
                   if (found) {
-                    if (found.stock > 0) addToCart(found);
+                    if (found.stock > 0) {
+                      addToCart(found);
+                      setSummaryOpen(true);
+                      setScanMessage(`${found.name} agregado al carrito`);
+                    } else {
+                      setScanMessage(`${found.name} no tiene stock disponible`);
+                    }
                     setQuery("");
                   }
                 }
@@ -141,6 +156,12 @@ export function POS({
             <ScanLine size={16} /> Escanear (camara)
           </button>
         </div>
+        {scanMessage && (
+          <div className="pos-scan-feedback">
+            <span>{scanMessage}</span>
+            <button onClick={() => setScanMessage("")}>Cerrar</button>
+          </div>
+        )}
         <div className="pos-table-head">
           <span>Producto</span>
           <span>Stock</span>
@@ -175,10 +196,17 @@ export function POS({
           </div>
         )}
       </section>
-      <aside className="sale-summary">
+      <aside className={`sale-summary ${summaryOpen ? "is-open" : ""}`}>
         <div className="sale-summary-head">
-          <h2>Resumen de venta</h2>
-          <span>{cart.length} items</span>
+          <button className="sale-summary-toggle" onClick={() => setSummaryOpen((open) => !open)}>
+            <span className="summary-title">
+              <ShoppingCart size={18} />
+              <strong>Resumen de venta</strong>
+            </span>
+            <span className="summary-total">{lps(grandTotal)}</span>
+            <span className="summary-count">{cart.length} items</span>
+            <ChevronDown className="summary-chevron" size={18} />
+          </button>
         </div>
 
         <label>

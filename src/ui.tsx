@@ -100,7 +100,7 @@ export function Metric({
 
 export function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap data-table-wrap">
       <table>
         <thead>
           <tr>
@@ -113,7 +113,7 @@ export function DataTable({ headers, rows }: { headers: string[]; rows: ReactNod
           {rows.map((row, index) => (
             <tr key={index}>
               {row.map((cell, cellIndex) => (
-                <td key={cellIndex}>{cell}</td>
+                <td key={cellIndex} data-label={headers[cellIndex] ?? ""}>{cell}</td>
               ))}
             </tr>
           ))}

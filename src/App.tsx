@@ -1610,7 +1610,7 @@ export function App() {
             <h1>{selectedModule}</h1>
           </div>
           <div className="topbar-actions">
-            {currentRole !== "sales" && (
+            {currentRole !== "sales" && selectedModule !== "POS" && (
               <>
                 <button className="primary-button" onClick={exportExcel}>
                   <Download size={17} /> Excel
@@ -1625,7 +1625,7 @@ export function App() {
             <button onClick={() => setNotice("")}>Cerrar</button>
           </div>
         )}
-        {currentRole === "admin" && (backupDaysAgo === null || backupDaysAgo >= 7) && (
+        {currentRole === "admin" && selectedModule !== "POS" && (backupDaysAgo === null || backupDaysAgo >= 7) && (
           <div className="backup-alert">
             <span>
               {backupDaysAgo === null
