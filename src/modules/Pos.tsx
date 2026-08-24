@@ -247,8 +247,7 @@ export function POS({
           ))}
         </div>
 
-        <section className="pos-options">
-          <div className="pos-options-heading">Datos de venta, pago y descuento</div>
+        <section className="pos-options" aria-label="Datos de cobro">
           <div className="pos-options-body">
             <label className="pos-option-field customer-field">
               <span>Cliente</span>
@@ -279,33 +278,34 @@ export function POS({
                 </select>
               )}
             </label>
-            <div className="payment-toggle compact-payment">
+            <div className="pos-compact-control payment-control">
+              <span className="pos-control-label">Pago</span>
+              <div className="payment-toggle compact-payment">
               <button className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>Contado</button>
               <button className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Crédito</button>
+              </div>
             </div>
             {!lockSeller && (
               <div className="discount-control">
-                <span className="discount-label">Descuento adicional</span>
+                <span className="discount-label">Descuento ticket</span>
                 <div className="discount-choice" role="group" aria-label="Tipo de descuento">
                   <button
                     type="button"
                     className={discountMode === "percent" ? "active" : ""}
                     onClick={() => { setDiscountMode("percent"); setDiscountAmount(0); }}
                   >
-                    % Porcentaje
+                    %
                   </button>
                   <button
                     type="button"
                     className={discountMode === "amount" ? "active" : ""}
                     onClick={() => { setDiscountMode("amount"); setDiscountPct(0); }}
                   >
-                    L Monto
+                    L
                   </button>
                 </div>
                 <label className="discount-input">
-                  <span>{discountMode === "percent" ? "Porcentaje a descontar" : "Monto a descontar"}</span>
                   <div>
-                    <b>{discountMode === "percent" ? "%" : "L"}</b>
                     <input
                       type="number"
                       min={0}
@@ -317,6 +317,7 @@ export function POS({
                         else setDiscountAmount(Math.max(0, Math.min(subtotal, value)));
                       }}
                     />
+                    <b>{discountMode === "percent" ? "%" : "L"}</b>
                   </div>
                 </label>
               </div>
@@ -333,43 +334,28 @@ export function POS({
           </div>
         </section>
 
-        <div className="sale-breakdown">
-          {offerSavings > 0 && (
-            <div className="brk-row muted">
-              <span>Ahorro por ofertas</span>
-              <b>- {lps(offerSavings)}</b>
+        <div className="pos-checkout-dock">
+          <div className="sale-breakdown">
+            <div className="brk-row">
+              <span>Subtotal</span>
+              <b>{lps(subtotal)}</b>
             </div>
-          )}
-          {lineDiscountSavings > 0 && (
-            <div className="brk-row muted">
-              <span>Descuentos por prenda</span>
-              <b>- {lps(lineDiscountSavings)}</b>
-            </div>
-          )}
-          <div className="brk-row">
-            <span>Subtotal</span>
-            <b>{lps(subtotal)}</b>
+            {offerSavings > 0 && <div className="brk-row saving"><span>Ofertas</span><b>-{lps(offerSavings)}</b></div>}
+            {lineDiscountSavings > 0 && <div className="brk-row saving"><span>Desc. prendas</span><b>-{lps(lineDiscountSavings)}</b></div>}
+            {discountAmt > 0 && <div className="brk-row saving"><span>Desc. ticket</span><b>-{lps(discountAmt)}</b></div>}
+            {tax > 0 && <div className="brk-row"><span>ISV</span><b>{lps(tax)}</b></div>}
           </div>
-          {discountAmt > 0 && (
-            <div className="brk-row muted">
-              <span>Descuento extra</span>
-              <b>- {lps(discountAmt)}</b>
-            </div>
-          )}
-          {tax > 0 && (
-            <div className="brk-row muted">
-              <span>ISV (15%)</span>
-              <b>{lps(tax)}</b>
-            </div>
-          )}
+          <div className="total-box">
+            <span>Total</span>
+            <strong>{lps(grandTotal)}</strong>
+          </div>
+          <button className="primary-button pos-charge-button" disabled={cart.length === 0 || issuing} onClick={() => void submit()}>
+            <FileText size={18} /> {issuing ? "Generando..." : "Generar factura"}
+          </button>
+          <button className="secondary-button pos-clear-button" title="Vaciar carrito" onClick={() => { setCart([]); setLastSale(null); }}>
+            <X size={17} /> Limpiar
+          </button>
         </div>
-        <div className="total-box">
-          <span>Total a pagar</span>
-          <strong>{lps(grandTotal)}</strong>
-        </div>
-        <button className="primary-button wide" disabled={cart.length === 0 || issuing} onClick={() => void submit()}>
-          <FileText size={18} /> {issuing ? "Generando..." : "Generar factura"}
-        </button>
         {lastSale && (
           <div className="last-sale-note">
             <strong>✓ Venta #{lastSale.document_number} generada</strong>
@@ -379,9 +365,6 @@ export function POS({
             </button>
           </div>
         )}
-        <button className="secondary-button wide" onClick={() => { setCart([]); setLastSale(null); }}>
-          Limpiar venta
-        </button>
       </aside>
 
       {catalogOpen && (

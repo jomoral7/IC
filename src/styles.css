@@ -2780,6 +2780,221 @@ td:last-child {
   .pos-options .compact-tax { min-height: 34px; }
 }
 
+/* POS desktop: el cobro es un muelle compacto; el alto pertenece al ticket. */
+@media (min-width: 901px) {
+  .pos-workspace > .sale-summary {
+    max-height: calc(100dvh - 132px);
+    min-height: 500px;
+  }
+
+  .sale-summary-head {
+    flex: 0 0 48px;
+    margin-bottom: 0;
+    padding: 12px 18px;
+  }
+
+  .sale-summary .ticket-list {
+    min-height: 180px;
+    margin: 0 18px;
+  }
+
+  .pos-options {
+    flex: 0 0 auto;
+    margin: 0;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    background: #f7f9fc;
+  }
+
+  .pos-options-body {
+    display: grid;
+    grid-template-columns: minmax(250px, 2fr) minmax(180px, 1.15fr) minmax(172px, .95fr) minmax(245px, 1.35fr) minmax(132px, .7fr);
+    gap: 10px;
+    align-items: end;
+    padding: 8px 18px;
+  }
+
+  .pos-options .customer-field,
+  .pos-options .payment-control,
+  .pos-options .discount-control,
+  .pos-options .compact-tax {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .pos-option-field {
+    gap: 3px;
+  }
+
+  .pos-option-field input,
+  .pos-option-field select {
+    height: 34px;
+    min-height: 34px;
+    border-radius: 7px;
+    background: #fff;
+  }
+
+  .pos-compact-control {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .pos-control-label {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .pos-options .compact-payment {
+    min-height: 34px;
+    height: 34px;
+  }
+
+  .pos-options .discount-control {
+    display: grid;
+    grid-template-columns: auto 70px minmax(80px, 1fr);
+    grid-template-rows: 13px 34px;
+    gap: 3px 6px;
+    align-items: stretch;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .pos-options .discount-label {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .pos-options .discount-choice {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    width: 86px;
+    height: 34px;
+    padding: 2px;
+  }
+
+  .pos-options .discount-choice button {
+    min-height: 30px;
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+
+  .pos-options .discount-input {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .pos-options .discount-input > div {
+    height: 34px;
+    background: #fff;
+  }
+
+  .pos-options .discount-input b {
+    order: 2;
+    width: 28px;
+  }
+
+  .pos-options .discount-input input {
+    text-align: left;
+  }
+
+  .pos-options .compact-tax {
+    min-height: 34px;
+    height: 34px;
+    margin: 0;
+    padding: 0 10px;
+    border-radius: 7px;
+  }
+
+  .pos-options .commission-note {
+    display: none;
+  }
+
+  .pos-checkout-dock {
+    flex: 0 0 64px;
+    display: grid;
+    grid-template-columns: minmax(310px, 1fr) minmax(190px, auto) minmax(220px, 280px) auto;
+    gap: 10px;
+    align-items: stretch;
+    padding: 8px 18px;
+    border-top: 1px solid var(--line);
+    background: #fff;
+  }
+
+  .pos-checkout-dock .sale-breakdown {
+    display: flex;
+    align-items: center;
+    gap: 6px 16px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .pos-checkout-dock .brk-row {
+    display: grid;
+    gap: 1px;
+    min-width: max-content;
+    padding: 0;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .pos-checkout-dock .brk-row b {
+    font-size: 13px;
+  }
+
+  .pos-checkout-dock .brk-row.saving b {
+    color: #0b7a60;
+  }
+
+  .pos-checkout-dock .total-box {
+    display: grid;
+    align-content: center;
+    justify-items: end;
+    gap: 0;
+    min-width: 190px;
+    margin: 0;
+    padding: 0 14px;
+    border-radius: 8px;
+  }
+
+  .pos-checkout-dock .total-box span {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .06em;
+  }
+
+  .pos-checkout-dock .total-box strong {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .pos-charge-button,
+  .pos-clear-button {
+    min-height: 48px;
+    margin: 0 !important;
+    justify-content: center;
+  }
+
+  .pos-clear-button {
+    min-width: 92px;
+  }
+
+  .last-sale-note {
+    flex: 0 0 auto;
+    margin: 0 18px 8px;
+  }
+}
+
 /* ============================================================
    Detalle de factura (modal)
    ============================================================ */
