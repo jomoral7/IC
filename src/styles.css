@@ -485,7 +485,7 @@ td span {
 
 .pos-table-head {
   display: grid;
-  grid-template-columns: 1fr 76px 110px;
+  grid-template-columns: minmax(0, 1fr) 76px 110px;
   gap: 12px;
   padding: 16px 22px;
   background: #f8fafc;
@@ -684,10 +684,11 @@ select {
   color: var(--ink);
   text-align: left;
   display: grid;
-  grid-template-columns: 1fr 76px 110px;
+  grid-template-columns: minmax(0, 1fr) 76px 110px;
   gap: 12px;
   align-items: center;
 }
+.catalog-list button > div { min-width: 0; }
 
 .catalog-list button:hover {
   background: #f8fafc;
@@ -4997,75 +4998,3 @@ td:last-child {
   .fin-result,
   .goal-top,
   .goal-line,
-  .rank-row,
-  .dash-alert-item,
-  .commission-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .fin-line b,
-  .fin-subtotal b,
-  .fin-result strong,
-  .commission-amt {
-    text-align: left;
-  }
-
-  .labels-list,
-  .labels-selected,
-  .commission-list {
-    max-height: none;
-  }
-
-  .labels-item,
-  .labels-sel-row,
-  .offer-pick-item {
-    align-items: flex-start;
-  }
-
-  .labels-meta,
-  .labels-sel-info strong {
-    white-space: normal;
-  }
-
-  .notice {
-    left: 12px;
-    right: 12px;
-    top: 12px;
-    max-width: none;
-  }
-
-  .backup-alert {
-    padding: 10px 12px;
-    font-size: 12px;
-    line-height: 1.35;
-  }
-
-  .backup-alert .secondary-button {
-    min-height: 38px;
-    width: 100%;
-  }
-}
-
-@media (max-width: 420px) {
-  .workspace {
-    padding-inline: 10px;
-  }
-
-  .topbar h1 {
-    font-size: 28px;
-  }
-
-  .panel {
-    padding: 12px;
-  }
-
-  .data-table-wrap td {
-    grid-template-columns: 1fr;
-    gap: 3px;
-  }
-
-  .row-actions {
-    min-width: 0;
-  }
-}
