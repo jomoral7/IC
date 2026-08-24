@@ -26,7 +26,7 @@ import { supabase } from "./lib/supabase";
 import type { Account, AccountType, BonusPayment, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
 import { BrandMark, LoginScreen, roleLabel } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
-import { POS } from "./modules/Pos";
+import { POS, type POSInvoicePreview } from "./modules/Pos";
 import { Inventory } from "./modules/Inventory";
 import { Invoices, Kardex, Reports } from "./modules/Records";
 import { Parties } from "./modules/Parties";
@@ -1127,7 +1127,19 @@ export function App() {
 
   type InvoiceLine = { qty: number; name: string; size: string | null; category: string | null; brand: string | null; color: string | null; sale_price: number; original_price?: number };
 
-  async function buildInvoicePdf(number: string, lines: InvoiceLine[], total: number, customer?: string, dateStr?: string, internal?: { sellerName: string | null; commission: number }, amounts?: { subtotal: number; discount: number; tax: number }, openView = false) {
+  async function buildInvoicePdf(
+    number: string,
+    lines: InvoiceLine[],
+    total: number,
+    customer?: string,
+    dateStr?: string,
+    internal?: { sellerName: string | null; commission: number },
+    amounts?: { subtotal: number; discount: number; tax: number },
+    options?: { openView?: boolean; preview?: boolean; paymentTerms?: "cash" | "credit" },
+  ) {
+    const openView = options?.openView ?? false;
+    const preview = options?.preview ?? false;
+    const contentOffset = preview ? 38 : 0;
     const pdf = new jsPDF({ unit: "pt", format: "letter" });
     pdf.setFillColor("#FFFFFF");
     pdf.rect(0, 0, 612, 792, "F");
@@ -1142,37 +1154,51 @@ export function App() {
     pdf.setFillColor("#D9A13B");
     pdf.rect(170, 77, 6, 6, "F");
     pdf.setFontSize(20);
-    pdf.text(internal ? "FACTURA (INTERNA)" : "FACTURA", internal ? 340 : 400, 60);
+    const documentTitle = preview ? "VISTA PREVIA" : internal ? "FACTURA (INTERNA)" : "FACTURA";
+    pdf.text(documentTitle, preview ? 372 : internal ? 340 : 400, 60);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     pdf.setTextColor("#667782");
-    pdf.text(`No. ${number}`, 400, 78);
+    pdf.text(preview ? "No. BORRADOR" : `No. ${number}`, 400, 78);
     pdf.text(`${dateStr ?? new Date().toLocaleDateString("es-HN")}`, 400, 92);
 
     // QR con el numero de factura (para buscarla luego)
-    try {
-      const qrData = await QRCode.toDataURL(number, { margin: 0, width: 120 });
-      pdf.addImage(qrData, "PNG", 500, 44, 56, 56);
-    } catch {
-      // si falla el QR, la factura igual se genera
+    if (!preview) {
+      try {
+        const qrData = await QRCode.toDataURL(number, { margin: 0, width: 120 });
+        pdf.addImage(qrData, "PNG", 500, 44, 56, 56);
+      } catch {
+        // si falla el QR, la factura igual se genera
+      }
+    }
+
+    if (preview) {
+      pdf.setFillColor("#FFF3D6");
+      pdf.roundedRect(56, 106, 500, 30, 5, 5, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.setTextColor("#8A5A00");
+      pdf.text("SIMULACION — NO REGISTRA VENTA, INVENTARIO, COMISION NI CONTABILIDAD", 74, 125);
     }
 
     if (customer) {
       pdf.setTextColor("#0B2533");
-      pdf.text(`Cliente: ${customer}`, 56, 118);
+      pdf.text(`Cliente: ${customer}`, 56, 118 + contentOffset);
     }
+    pdf.setTextColor("#667782");
+    pdf.text(`Condicion: ${options?.paymentTerms === "credit" ? "Credito" : "Contado"}`, 400, 118 + contentOffset);
     pdf.setDrawColor("#14384C");
-    pdf.line(56, 135, 556, 135);
+    pdf.line(56, 135 + contentOffset, 556, 135 + contentOffset);
 
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(9);
     pdf.setTextColor("#667782");
-    pdf.text("CANT", 56, 156);
-    pdf.text("DESCRIPCION", 96, 156);
-    pdf.text("SUBTOTAL", 482, 156);
+    pdf.text("CANT", 56, 156 + contentOffset);
+    pdf.text("DESCRIPCION", 96, 156 + contentOffset);
+    pdf.text("SUBTOTAL", 482, 156 + contentOffset);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    let y = 182;
+    let y = 182 + contentOffset;
     lines.forEach((line) => {
       pdf.setTextColor("#0B2533");
       pdf.text(String(line.qty), 56, y);
@@ -1262,7 +1288,7 @@ export function App() {
       // Abre el PDF en una pestaña para verlo/imprimirlo.
       const url = pdf.output("bloburl");
       const win = window.open(url, "_blank");
-      if (!win) pdf.save(`factura-${number}.pdf`); // si bloquean la pestaña, lo descarga
+      if (!win) pdf.save(preview ? "factura-vista-previa.pdf" : `factura-${number}.pdf`); // si bloquean la pestaña, lo descarga
     } else {
       pdf.save(`factura-${internal ? "interna-" : ""}${number}.pdf`);
     }
@@ -1314,7 +1340,20 @@ export function App() {
         discount: Number(doc.discount ?? 0),
         tax: Number(doc.tax ?? 0),
       },
-      openView,
+      { openView, paymentTerms: doc.payment_terms === "credit" ? "credit" : "cash" },
+    );
+  }
+
+  async function previewInvoice(payload: POSInvoicePreview) {
+    await buildInvoicePdf(
+      "BORRADOR",
+      payload.lines,
+      payload.total,
+      payload.customerName || "Cliente final",
+      new Date().toLocaleDateString("es-HN"),
+      undefined,
+      { subtotal: payload.subtotal, discount: payload.discount, tax: payload.tax },
+      { openView: true, preview: true, paymentTerms: payload.paymentTerms },
     );
   }
 
@@ -1685,6 +1724,8 @@ export function App() {
             currentSellerId={sellers.find((s) => s.user_id === session?.user?.id)?.id ?? null}
             printReceipt={(doc) => void downloadInvoice(doc, false, true)}
             onOpenDetail={(doc) => void openInvoiceDetail(doc)}
+            previewInvoice={previewInvoice}
+            canPreviewInvoice={currentRole === "admin"}
           />
         )}
         {selectedModule === "Inventario" && (

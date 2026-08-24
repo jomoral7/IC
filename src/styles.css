@@ -2784,6 +2784,18 @@ td:last-child {
 
 /* POS desktop: el cobro es un muelle compacto; el alto pertenece al ticket. */
 @media (min-width: 901px) {
+  .workspace:has(.pos-workspace) {
+    padding-top: 14px;
+  }
+
+  .workspace:has(.pos-workspace) .topbar {
+    margin-bottom: 10px;
+  }
+
+  .workspace:has(.pos-workspace) .topbar h1 {
+    font-size: 30px;
+  }
+
   .pos-workspace > .sale-summary {
     max-height: calc(100dvh - 132px);
     min-height: 500px;
@@ -2800,6 +2812,42 @@ td:last-child {
     margin: 0 18px;
   }
 
+  .ticket-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    flex: 0 0 29px;
+    align-items: center;
+    margin: 0 18px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .ticket-columns > div {
+    display: grid;
+    grid-template-columns: 122px 100px 38px 96px 32px;
+    gap: 8px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .ticket-line .ticket-controls {
+    display: grid;
+    grid-template-columns: 122px 100px 38px 96px 32px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .ticket-line .qty-stepper { justify-self: center; }
+  .ticket-line .price-cell { justify-self: center; }
+  .ticket-line .line-discount-button { justify-self: center; }
+  .ticket-line .ticket-controls .line-total { justify-self: end; margin-left: 0; }
+
   .pos-options {
     flex: 0 0 auto;
     margin: 0;
@@ -2810,14 +2858,13 @@ td:last-child {
 
   .pos-options-body {
     display: grid;
-    grid-template-columns: minmax(250px, 2fr) minmax(180px, 1.15fr) minmax(172px, .95fr) minmax(245px, 1.35fr) minmax(132px, .7fr);
+    grid-template-columns: minmax(270px, 2fr) minmax(190px, 1.1fr) minmax(250px, 1.35fr) minmax(140px, .72fr);
     gap: 10px;
     align-items: end;
     padding: 8px 18px;
   }
 
   .pos-options .customer-field,
-  .pos-options .payment-control,
   .pos-options .discount-control,
   .pos-options .compact-tax {
     grid-column: auto;
@@ -2951,7 +2998,7 @@ td:last-child {
   .pos-checkout-dock {
     flex: 0 0 64px;
     display: grid;
-    grid-template-columns: minmax(310px, 1fr) minmax(190px, auto) minmax(220px, 280px) auto;
+    grid-template-columns: minmax(300px, 1fr) minmax(170px, auto) auto minmax(240px, 320px) auto;
     gap: 10px;
     align-items: stretch;
     padding: 8px 18px;
@@ -3021,6 +3068,7 @@ td:last-child {
   }
 
   .pos-charge-button,
+  .pos-preview-button,
   .pos-clear-button {
     min-height: 48px;
     margin: 0 !important;
@@ -3031,10 +3079,200 @@ td:last-child {
     min-width: 92px;
   }
 
+  .pos-preview-button {
+    min-width: 124px;
+  }
+
   .last-sale-note {
     flex: 0 0 auto;
     margin: 0 18px 8px;
   }
+}
+
+.ticket-columns { display: none; }
+
+@media (min-width: 901px) {
+  .ticket-columns { display: grid; }
+}
+
+/* Cobro final: segundo paso deliberado, sin mezclarlo con la preparacion del ticket. */
+.checkout-backdrop {
+  z-index: 80;
+}
+
+.checkout-modal {
+  width: min(560px, calc(100vw - 28px));
+  max-height: min(760px, 92dvh);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(11, 37, 51, .28);
+}
+
+.checkout-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.checkout-modal-head span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.checkout-modal-head h2 {
+  font-size: 25px;
+}
+
+.checkout-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 18px 22px 10px;
+}
+
+.checkout-methods > button {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--navy);
+  text-align: left;
+  cursor: pointer;
+}
+
+.checkout-methods > button.active {
+  border-color: var(--navy);
+  background: #eef4f7;
+  box-shadow: inset 0 0 0 1px var(--navy);
+}
+
+.checkout-methods button span,
+.checkout-methods button strong,
+.checkout-methods button small {
+  display: block;
+}
+
+.checkout-methods button strong { font-size: 14px; }
+.checkout-methods button small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+
+.checkout-cash-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px 22px 16px;
+}
+
+.checkout-cash-panel label { gap: 5px; }
+
+.money-input {
+  height: 48px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.money-input b {
+  width: 40px;
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  color: var(--navy);
+}
+
+.money-input input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  font-size: 18px;
+  text-align: right;
+}
+
+.change-box {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: #edf8f4;
+  color: #0b6b54;
+}
+
+.change-box.short { background: #fff2ef; color: #a84435; }
+.change-box span { font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.change-box strong { font-size: 21px; }
+
+.checkout-credit-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 22px 16px;
+  padding: 14px;
+  border-radius: 9px;
+  background: #eef4f7;
+  color: var(--navy);
+}
+
+.checkout-credit-panel.needs-customer { background: #fff2ef; color: #9a3e31; }
+.checkout-credit-panel strong,
+.checkout-credit-panel span { display: block; }
+.checkout-credit-panel span { margin-top: 3px; font-size: 12px; color: inherit; opacity: .82; }
+
+.checkout-review {
+  margin: 0 22px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.checkout-review > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.checkout-review b { color: var(--navy); }
+.checkout-review .checkout-review-total { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--navy); }
+.checkout-review-total strong { font-size: 23px; }
+
+.checkout-actions {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 16px 22px 20px;
+}
+
+.checkout-actions button {
+  min-height: 46px;
+  justify-content: center;
+}
+
+@media (max-width: 760px) {
+  .checkout-methods,
+  .checkout-cash-panel { grid-template-columns: 1fr; }
+  .checkout-actions { grid-template-columns: 1fr; }
+  .checkout-actions .primary-button { grid-row: 1; }
 }
 
 /* ============================================================

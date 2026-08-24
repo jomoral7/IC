@@ -1,4 +1,4 @@
-import { BadgePercent, Check, ChevronDown, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
+import { BadgePercent, Banknote, Check, ChevronDown, CreditCard, Eye, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CartLine, Party, Product, Seller } from "../types";
 import { lps, stockState } from "../lib/format";
@@ -11,6 +11,25 @@ function matchesCode(product: Product, code: string): boolean {
     .filter(Boolean)
     .some((v) => String(v).toLowerCase() === c);
 }
+
+export type POSInvoicePreview = {
+  customerName: string;
+  paymentTerms: "cash" | "credit";
+  lines: Array<{
+    qty: number;
+    name: string;
+    size: string | null;
+    category: string | null;
+    brand: string | null;
+    color: string | null;
+    sale_price: number;
+    original_price?: number;
+  }>;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+};
 
 export function POS({
   products,
@@ -25,6 +44,8 @@ export function POS({
   currentSellerId = null,
   printReceipt,
   onOpenDetail,
+  previewInvoice,
+  canPreviewInvoice = false,
 }: {
   products: Product[];
   cart: CartLine[];
@@ -49,6 +70,10 @@ export function POS({
   printReceipt: (doc: any) => void;
   /** Abre el formulario de detalle de la factura recien generada. */
   onOpenDetail: (doc: any) => void;
+  /** Abre un PDF de simulacion sin crear documentos ni movimientos. */
+  previewInvoice: (payload: POSInvoicePreview) => Promise<void> | void;
+  /** La simulacion queda limitada a administradores por ahora. */
+  canPreviewInvoice?: boolean;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [sellerId, setSellerId] = useState("");
@@ -69,6 +94,8 @@ export function POS({
   const [lastSale, setLastSale] = useState<any | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [scanMessage, setScanMessage] = useState("");
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [cashReceived, setCashReceived] = useState("");
 
   const subtotal = total;
   const linePrice = (line: CartLine) => Number(((line.manual_discount_pct ?? 0) > 0
@@ -159,6 +186,7 @@ export function POS({
     setIssuing(false);
     if (doc) {
       setLastSale(doc);
+      setCheckoutOpen(false);
       // Abre el formulario de detalle de la factura recien generada.
       onOpenDetail(doc);
     }
@@ -168,7 +196,42 @@ export function POS({
     setDiscountAmount(0);
     setDiscountMode("percent");
     setApplyTax(false);
+    setTerms("cash");
+    setCashReceived("");
   }
+
+  function openCheckout() {
+    if (cart.length === 0) return;
+    setCashReceived(grandTotal.toFixed(2));
+    setCheckoutOpen(true);
+  }
+
+  function openInvoicePreview() {
+    if (cart.length === 0) return;
+    void previewInvoice({
+      customerName: customerName.trim(),
+      paymentTerms: terms,
+      lines: cart.map((line) => ({
+        qty: line.qty,
+        name: line.name,
+        size: line.size,
+        category: line.category,
+        brand: line.brand,
+        color: line.color,
+        sale_price: linePrice(line),
+        original_price: line.base_price ?? line.sale_price,
+      })),
+      subtotal,
+      discount: discountAmt,
+      tax,
+      total: grandTotal,
+    });
+  }
+
+  const cashReceivedValue = Number(cashReceived || 0);
+  const changeDue = Math.max(0, cashReceivedValue - grandTotal);
+  const creditNeedsCustomer = terms === "credit" && !customerName.trim();
+  const cashIsShort = terms === "cash" && cashReceivedValue < grandTotal;
 
   return (
     <section className="pos-workspace">
@@ -194,6 +257,15 @@ export function POS({
             <ChevronDown className="summary-chevron" size={18} />
           </button>
         </div>
+
+        {cart.length > 0 && (
+          <div className="ticket-columns" aria-hidden="true">
+            <span>Producto</span>
+            <div>
+              <span>Cantidad</span><span>Precio</span><span>Desc.</span><span>Total</span><span></span>
+            </div>
+          </div>
+        )}
 
         <div className="ticket-list editable">
           {cart.length === 0 && (
@@ -297,13 +369,6 @@ export function POS({
                 </select>
               )}
             </label>
-            <div className="pos-compact-control payment-control">
-              <span className="pos-control-label">Pago</span>
-              <div className="payment-toggle compact-payment" role="group" aria-label="Forma de pago">
-                <button type="button" className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>Contado</button>
-                <button type="button" className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Crédito</button>
-              </div>
-            </div>
             {!lockSeller && (
               <div className="discount-control">
                 <span className="discount-label">Descuento ticket</span>
@@ -369,8 +434,13 @@ export function POS({
             <span>Total</span>
             <strong>{lps(grandTotal)}</strong>
           </div>
-          <button className="primary-button pos-charge-button" disabled={cart.length === 0 || issuing} onClick={() => void submit()}>
-            <FileText size={18} /> {issuing ? "Generando..." : "Generar factura"}
+          {canPreviewInvoice && (
+            <button className="secondary-button pos-preview-button" disabled={cart.length === 0} onClick={openInvoicePreview} title="Vista previa sin registrar la venta">
+              <Eye size={18} /> Vista previa
+            </button>
+          )}
+          <button className="primary-button pos-charge-button" disabled={cart.length === 0 || issuing} onClick={openCheckout}>
+            <Banknote size={18} /> Cobrar {lps(grandTotal)}
           </button>
           <button className="secondary-button pos-clear-button" title="Vaciar carrito" onClick={() => { setCart([]); setLastSale(null); }}>
             <X size={17} /> Limpiar
@@ -473,6 +543,61 @@ export function POS({
       )}
 
       {scanning && <ScannerModal onResult={handleScan} onClose={() => setScanning(false)} />}
+
+      {checkoutOpen && (
+        <div className="drawer-backdrop checkout-backdrop" onMouseDown={() => !issuing && setCheckoutOpen(false)}>
+          <section className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="checkout-modal-head">
+              <div>
+                <span>Finalizar venta</span>
+                <h2 id="checkout-title">Cobrar {lps(grandTotal)}</h2>
+              </div>
+              <button className="icon-button" disabled={issuing} aria-label="Cerrar cobro" onClick={() => setCheckoutOpen(false)}><X size={18} /></button>
+            </header>
+
+            <div className="checkout-methods" role="group" aria-label="Forma de pago">
+              <button type="button" className={terms === "cash" ? "active" : ""} onClick={() => { setTerms("cash"); setCashReceived(grandTotal.toFixed(2)); }}>
+                <Banknote size={20} /><span><strong>Contado</strong><small>Pago inmediato</small></span>
+              </button>
+              <button type="button" className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>
+                <CreditCard size={20} /><span><strong>Crédito</strong><small>Saldo por cobrar</small></span>
+              </button>
+            </div>
+
+            {terms === "cash" ? (
+              <div className="checkout-cash-panel">
+                <label>
+                  <span>Monto recibido</span>
+                  <div className="money-input"><b>L</b><input autoFocus type="number" min={0} step="0.01" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} /></div>
+                </label>
+                <div className={`change-box ${cashIsShort ? "short" : ""}`}>
+                  <span>{cashIsShort ? "Falta por recibir" : "Cambio a entregar"}</span>
+                  <strong>{lps(cashIsShort ? grandTotal - cashReceivedValue : changeDue)}</strong>
+                </div>
+              </div>
+            ) : (
+              <div className={`checkout-credit-panel ${creditNeedsCustomer ? "needs-customer" : ""}`}>
+                <CreditCard size={20} />
+                <div><strong>{creditNeedsCustomer ? "Selecciona un cliente" : customerName}</strong><span>{creditNeedsCustomer ? "Una venta a crédito no puede quedar como Cliente final." : `Quedará pendiente por cobrar: ${lps(grandTotal)}`}</span></div>
+              </div>
+            )}
+
+            <div className="checkout-review">
+              <div><span>Subtotal</span><b>{lps(subtotal)}</b></div>
+              {discountAmt > 0 && <div><span>Descuento</span><b>-{lps(discountAmt)}</b></div>}
+              {tax > 0 && <div><span>ISV 15%</span><b>{lps(tax)}</b></div>}
+              <div className="checkout-review-total"><span>Total</span><strong>{lps(grandTotal)}</strong></div>
+            </div>
+
+            <footer className="checkout-actions">
+              <button className="secondary-button" disabled={issuing} onClick={() => setCheckoutOpen(false)}>Cancelar</button>
+              <button className="primary-button" disabled={issuing || creditNeedsCustomer || cashIsShort} onClick={() => void submit()}>
+                <FileText size={18} /> {issuing ? "Registrando..." : "Confirmar y generar factura"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </section>
   );
 }
