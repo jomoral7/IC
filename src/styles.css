@@ -2714,6 +2714,72 @@ td:last-child {
   .line-discount-editor small { width: 100%; margin-left: 0; }
 }
 
+/* Ajustes de la caja completa: los datos siempre están visibles, sin ocupar media pantalla. */
+.pos-options-heading {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 900;
+}
+.pos-options-body {
+  grid-template-columns: minmax(190px, 1.35fr) minmax(180px, 1fr) minmax(180px, 1fr) minmax(142px, .72fr);
+  gap: 8px 10px;
+  padding: 0 12px 12px;
+}
+.pos-options .customer-field { grid-column: span 2; }
+.pos-options .compact-payment { grid-column: 4; }
+.pos-options .discount-control {
+  grid-column: 1 / 4;
+  grid-template-columns: 145px minmax(210px, 1fr) minmax(130px, .55fr);
+  align-items: center;
+  padding: 6px 8px;
+}
+.pos-options .discount-label { align-self: center; }
+.pos-options .discount-choice { grid-column: auto; }
+.pos-options .discount-input { grid-column: auto; }
+.pos-options .discount-input > span { display: none; }
+.pos-options .compact-tax {
+  grid-column: 4;
+  grid-row: 2;
+  min-height: 42px;
+  padding: 0 8px;
+  border: 1px solid #e4ebf2;
+  border-radius: 9px;
+  background: #fff;
+}
+
+/* La ventana de catálogo conserva sus columnas; no hereda el estilo de tarjetas del catálogo antiguo. */
+.product-picker .catalog-list button > span {
+  display: block;
+  grid-column: auto;
+  grid-row: auto;
+}
+.product-picker .catalog-list button > div,
+.product-picker .catalog-list button > em,
+.product-picker .catalog-list button > b {
+  grid-column: auto;
+  grid-row: auto;
+}
+.product-picker .catalog-list button .catalog-code {
+  display: block;
+  grid-column: auto;
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .pos-options-body { grid-template-columns: 1fr 1fr; }
+  .pos-options .customer-field,
+  .pos-options .compact-payment,
+  .pos-options .discount-control,
+  .pos-options .compact-tax { grid-column: auto; grid-row: auto; }
+  .pos-options .customer-field { grid-column: 1 / -1; }
+  .pos-options .discount-control { grid-column: 1 / -1; }
+  .pos-options .compact-tax { min-height: 34px; }
+}
+
 /* ============================================================
    Detalle de factura (modal)
    ============================================================ */

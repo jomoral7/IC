@@ -247,8 +247,8 @@ export function POS({
           ))}
         </div>
 
-        <details className="pos-options">
-          <summary>Datos de venta, pago y descuento</summary>
+        <section className="pos-options">
+          <div className="pos-options-heading">Datos de venta, pago y descuento</div>
           <div className="pos-options-body">
             <label className="pos-option-field customer-field">
               <span>Cliente</span>
@@ -331,7 +331,7 @@ export function POS({
               </div>
             )}
           </div>
-        </details>
+        </section>
 
         <div className="sale-breakdown">
           {offerSavings > 0 && (
