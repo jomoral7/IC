@@ -56,6 +56,7 @@ export function POS({
   const [issuing, setIssuing] = useState(false);
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [discountingId, setDiscountingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
@@ -96,7 +97,11 @@ export function POS({
     const q = query.trim().toLowerCase();
     if (!q) return products;
     return products.filter((p) =>
-      [p.name, p.internal_code, p.sku, p.barcode, p.brand, p.size, p.color].filter(Boolean).join(" ").toLowerCase().includes(q),
+      [p.name, p.internal_code, p.sku, p.barcode, p.brand, p.size, p.color, p.gender, p.category, p.description]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
     );
   }, [products, query]);
 
@@ -148,78 +153,16 @@ export function POS({
 
   return (
     <section className="pos-workspace">
-      <section className="catalog-panel">
-        <div className="pos-searchbar">
-          <div className="inv-search">
-            <Search size={16} />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                // El lector USB "escribe" el codigo y manda Enter: agrega el producto solo.
-                if (e.key === "Enter") {
-                  const code = query.trim();
-                  const found = code ? products.find((p) => matchesCode(p, code)) : undefined;
-                  if (found) {
-                    if (found.stock > 0) {
-                      addToCart(found);
-                      setSummaryOpen(true);
-                      setScanMessage(`${found.name} agregado al carrito`);
-                    } else {
-                      setScanMessage(`${found.name} no tiene stock disponible`);
-                    }
-                    setQuery("");
-                  }
-                }
-              }}
-              placeholder="Buscar o escanear producto por nombre / codigo"
-            />
-          </div>
-          <button className="pos-scan-button" title="Escanear con cámara" aria-label="Escanear con cámara" onClick={() => setScanning(true)}>
-            <ScanLine size={18} />
-          </button>
-        </div>
-        {scanMessage && (
-          <div className="pos-scan-feedback">
-            <span>{scanMessage}</span>
-            <button onClick={() => setScanMessage("")}>Cerrar</button>
-          </div>
-        )}
-        <div className="pos-table-head">
-          <span>Producto</span>
-          <span>Stock</span>
-          <span>Precio</span>
-        </div>
-        {shown.length === 0 ? (
-          <EmptyWork title="Sin productos" text="Crea productos en Inventario o ajusta la busqueda." />
-        ) : (
-          <div className="catalog-list">
-            {shown.map((product) => (
-              <button key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}>
-                <div>
-                  <strong>{product.name}</strong>
-                  <span className="catalog-code">{product.internal_code ?? product.sku}</span>
-                  <span className="catalog-meta">
-                    {[product.gender, product.category, product.brand, product.size, product.color].filter(Boolean).join(" · ") || "Sin detalle"}
-                  </span>
-                </div>
-                <em className={stockState(product.stock, product.min_stock) !== "ok" ? "stock-alert" : ""}>
-                  {product.stock} disp.
-                </em>
-                {product.discount_pct > 0 ? (
-                  <b className="pos-price-offer">
-                    <span className="pos-price-old">{lps(product.sale_price)}</span>
-                    {lps(product.price_final)} <span className="pos-offer-tag">-{product.discount_pct}%</span>
-                  </b>
-                ) : (
-                  <b>{lps(product.sale_price)}</b>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+      <div className="pos-workspace-actions">
+        <button className="pos-catalog-trigger" onClick={() => setCatalogOpen(true)}>
+          <Search size={18} /> Buscar productos
+        </button>
+        <button className="pos-scan-button" title="Escanear con cámara" aria-label="Escanear con cámara" onClick={() => setScanning(true)}>
+          <ScanLine size={18} />
+        </button>
+        <span>Busca por nombre, código o escanea el código de barras.</span>
+      </div>
+
       <aside className={`sale-summary ${summaryOpen ? "is-open" : ""}`}>
         <div className="sale-summary-head">
           <button className="sale-summary-toggle" onClick={() => setSummaryOpen((open) => !open)}>
@@ -235,7 +178,7 @@ export function POS({
 
         <div className="ticket-list editable">
           {cart.length === 0 && (
-            <EmptyWork title="Carrito vacio" text="Selecciona productos del listado para facturar." />
+            <EmptyWork title="Carrito vacío" text="Usa “Buscar productos” o el escáner para agregar prendas a la venta." />
           )}
           {cart.map((line) => (
             <div className="ticket-line" key={line.id}>
@@ -440,6 +383,63 @@ export function POS({
           Limpiar venta
         </button>
       </aside>
+
+      {catalogOpen && (
+        <div className="product-picker-backdrop" role="presentation" onMouseDown={() => setCatalogOpen(false)}>
+          <section className="product-picker" role="dialog" aria-modal="true" aria-label="Buscar productos" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="product-picker-header">
+              <div>
+                <span>Catálogo de inventario</span>
+                <h2>Buscar y agregar productos</h2>
+              </div>
+              <button className="ticket-remove" aria-label="Cerrar buscador" title="Cerrar" onClick={() => setCatalogOpen(false)}><X size={18} /></button>
+            </header>
+            <div className="pos-searchbar product-picker-search">
+              <div className="inv-search">
+                <Search size={17} />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const found = products.find((p) => matchesCode(p, query));
+                      if (found) {
+                        if (found.stock > 0) {
+                          addToCart(found);
+                          setSummaryOpen(true);
+                          setScanMessage(`${found.name} agregado al carrito`);
+                          setQuery("");
+                        } else setScanMessage(`${found.name} no tiene stock disponible`);
+                      }
+                    }
+                  }}
+                  placeholder="Nombre, código, departamento, categoría, marca, talla o color"
+                />
+              </div>
+              <button className="pos-scan-button" title="Escanear con cámara" aria-label="Escanear con cámara" onClick={() => { setCatalogOpen(false); setScanning(true); }}>
+                <ScanLine size={18} />
+              </button>
+            </div>
+            {scanMessage && <div className="pos-scan-feedback"><span>{scanMessage}</span><button onClick={() => setScanMessage("")}>Cerrar</button></div>}
+            <div className="product-picker-head">
+              <span>Producto</span><span>Departamento</span><span>Categoría</span><span>Marca</span><span>Talla</span><span>Color</span><span>Stock</span><span>Precio</span>
+            </div>
+            {shown.length === 0 ? <EmptyWork title="Sin productos" text="Prueba con otro dato de búsqueda." /> : (
+              <div className="catalog-list product-picker-list">
+                {shown.map((product) => (
+                  <button key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}>
+                    <div><strong>{product.name}</strong><span className="catalog-code">{product.internal_code ?? product.sku}</span></div>
+                    <span>{product.gender || "—"}</span><span>{product.category || "—"}</span><span>{product.brand || "—"}</span><span>{product.size || "—"}</span><span>{product.color || "—"}</span>
+                    <em className={stockState(product.stock, product.min_stock) !== "ok" ? "stock-alert" : ""}>{product.stock} disp.</em>
+                    {product.discount_pct > 0 ? <b className="pos-price-offer"><span className="pos-price-old">{lps(product.sale_price)}</span>{lps(product.price_final)} <span className="pos-offer-tag">-{product.discount_pct}%</span></b> : <b>{lps(product.sale_price)}</b>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {scanning && <ScannerModal onResult={handleScan} onClose={() => setScanning(false)} />}
     </section>
