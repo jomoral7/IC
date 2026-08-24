@@ -240,8 +240,8 @@ export function POS({
           {cart.map((line) => (
             <div className="ticket-line" key={line.id}>
               <div className="ticket-info">
-                <strong>{line.name}</strong>
-                <span>{line.internal_code ?? line.sku}</span>
+                <strong title={line.name}>{line.name}</strong>
+                <span className="ticket-variant">{[line.internal_code ?? line.sku, line.size || "Sin talla", line.color || "Sin color"].filter(Boolean).join(" · ")}</span>
                 {!line.manual_discount_pct && line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
                   <span className="ticket-offer"><BadgePercent size={12} /> Oferta -{line.discount_pct}%</span>
                 )}
@@ -289,6 +289,9 @@ export function POS({
                   </button>
                 )}
                 <b className="line-total">{lps(line.qty * linePrice(line))}</b>
+                <button className="ticket-remove" title={`Quitar ${line.name}`} aria-label={`Quitar ${line.name}`} onClick={() => setCart(cart.filter((item) => item.id !== line.id))}>
+                  <X size={16} />
+                </button>
               </div>
               {discountingId === line.id && !lockSeller && (
                 <div className="line-discount-editor">
@@ -297,9 +300,6 @@ export function POS({
                   <small>{line.discount_pct > 0 ? "Reemplaza la oferta automática de esta prenda." : "Se aplica solo a esta prenda."}</small>
                 </div>
               )}
-              <button className="ticket-remove" title={`Quitar ${line.name}`} aria-label={`Quitar ${line.name}`} onClick={() => setCart(cart.filter((item) => item.id !== line.id))}>
-                <X size={16} />
-              </button>
             </div>
           ))}
         </div>
