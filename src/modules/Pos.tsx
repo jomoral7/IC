@@ -32,7 +32,14 @@ export function POS({
   addToCart: (product: Product) => void;
   customers: Party[];
   sellers: Seller[];
-  issueSale: (customerName: string, sellerId: string | null, terms: "cash" | "credit", discountPct: number, applyTax: boolean) => Promise<any>;
+  issueSale: (
+    customerName: string,
+    sellerId: string | null,
+    terms: "cash" | "credit",
+    discountPct: number,
+    discountAmount: number,
+    applyTax: boolean,
+  ) => Promise<any>;
   total: number;
   /** Si es true (rol vendedor), el vendedor queda fijo y no puede elegir otro. */
   lockSeller?: boolean;
@@ -51,6 +58,7 @@ export function POS({
   const [scanning, setScanning] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
   const [applyTax, setApplyTax] = useState(false);
   const [lastSale, setLastSale] = useState<any | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -62,7 +70,10 @@ export function POS({
     (s, l) => s + Math.max(0, ((l.base_price ?? l.sale_price) - l.sale_price) * l.qty),
     0,
   );
-  const discountAmt = Math.max(0, Number((subtotal * (discountPct / 100)).toFixed(2)));
+  const discountAmt = Math.min(
+    subtotal,
+    Math.max(0, Number((discountAmount > 0 ? discountAmount : subtotal * (discountPct / 100)).toFixed(2))),
+  );
   const taxable = subtotal - discountAmt;
   const tax = applyTax ? Number((taxable * 0.15).toFixed(2)) : 0;
   const grandTotal = taxable + tax;
@@ -109,7 +120,7 @@ export function POS({
   async function submit() {
     if (cart.length === 0 || issuing) return;
     setIssuing(true);
-    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, discountPct, applyTax);
+    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, discountPct, discountAmount, applyTax);
     setIssuing(false);
     if (doc) {
       setLastSale(doc);
@@ -119,6 +130,7 @@ export function POS({
     setCustomerName("");
     setSellerId("");
     setDiscountPct(0);
+    setDiscountAmount(0);
     setApplyTax(false);
   }
 
@@ -204,7 +216,7 @@ export function POS({
               <strong>Resumen de venta</strong>
             </span>
             <span className="summary-total">{lps(grandTotal)}</span>
-            <span className="summary-count">{cart.length} items</span>
+            <span className="summary-count">{cart.reduce((sum, line) => sum + line.qty, 0)} piezas</span>
             <ChevronDown className="summary-chevron" size={18} />
           </button>
         </div>
@@ -333,16 +345,34 @@ export function POS({
             <b>{lps(subtotal)}</b>
           </div>
           {!lockSeller && (
-            <label className="brk-row brk-input">
-              <span>Descuento extra %</span>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={discountPct}
-                onChange={(e) => setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))))}
-              />
-            </label>
+            <>
+              <label className="brk-row brk-input">
+                <span>Descuento extra %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={discountPct}
+                  onChange={(e) => {
+                    setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))));
+                    setDiscountAmount(0);
+                  }}
+                />
+              </label>
+              <label className="brk-row brk-input">
+                <span>Descuento extra L</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={subtotal}
+                  value={discountAmount}
+                  onChange={(e) => {
+                    setDiscountAmount(Math.max(0, Math.min(subtotal, Number(e.target.value))));
+                    setDiscountPct(0);
+                  }}
+                />
+              </label>
+            </>
           )}
           {discountAmt > 0 && (
             <div className="brk-row muted">

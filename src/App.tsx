@@ -371,6 +371,7 @@ export function App() {
       brand: form.brand || null,
       size: form.size || null,
       color: form.color || null,
+      description: form.description?.trim() || null,
       gender: form.gender || null,
       season: form.season || null,
       internal_code: generatedCode,
@@ -405,6 +406,7 @@ export function App() {
       category: string;
       brand: string;
       gender: string;
+      description: string;
       supplier_id: string | null;
       real_cost: number;
       sale_price: number;
@@ -431,6 +433,7 @@ export function App() {
         brand: base.brand || null,
         size: combo.size || null,
         color: combo.color || null,
+        description: base.description?.trim() || null,
         gender: base.gender || null,
         season: null,
         internal_code: code,
@@ -844,8 +847,10 @@ export function App() {
   function addToCart(product: Product) {
     setCart((current) => {
       const existing = current.find((line) => line.id === product.id);
-      if (existing)
-        return current.map((line) => (line.id === product.id ? { ...line, qty: line.qty + 1 } : line));
+      if (existing) {
+        // No permitir vender más de lo disponible aunque se pulse varias veces el mismo artículo.
+        return current.map((line) => (line.id === product.id ? { ...line, qty: Math.min(line.qty + 1, line.stock) } : line));
+      }
       // Se vende al precio final (con descuento si el producto esta en oferta).
       return [...current, { ...product, qty: 1, base_price: product.sale_price, sale_price: product.price_final ?? product.sale_price }];
     });
@@ -887,16 +892,23 @@ export function App() {
     sellerId: string | null,
     paymentTerms: "cash" | "credit",
     discountPct = 0,
+    discountAmount = 0,
     applyTax = false,
   ) {
     if (!supabase || cart.length === 0) return;
+    if (cart.some((line) => line.qty > line.stock)) {
+      setNotice("Una o más prendas ya no tienen suficiente stock. Recarga el inventario e intenta de nuevo.");
+      return;
+    }
     const location = await ensureLocation();
     // Si el nombre coincide con un cliente registrado, se enlaza; si no, se guarda como texto.
     const matched = customerName
       ? customers.find((c) => c.name.toLowerCase() === customerName.toLowerCase())
       : undefined;
     const subtotal = cart.reduce((sum, line) => sum + line.qty * line.sale_price, 0);
-    const discount = Number((subtotal * (Math.max(0, discountPct) / 100)).toFixed(2));
+    // El descuento puede ser porcentaje o una cantidad fija, nunca superior al subtotal.
+    const percentDiscount = subtotal * (Math.max(0, discountPct) / 100);
+    const discount = Number(Math.min(subtotal, discountAmount > 0 ? discountAmount : percentDiscount).toFixed(2));
     const taxable = subtotal - discount;
     const tax = applyTax ? Number((taxable * 0.15).toFixed(2)) : 0;
     const total = taxable + tax;

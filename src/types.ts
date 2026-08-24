@@ -124,6 +124,8 @@ export type Product = {
   brand: string | null;
   size: string | null;
   color: string | null;
+  /** Detalle libre para diferenciar referencias similares. */
+  description: string | null;
   gender: string | null;
   season: string | null;
   internal_code: string | null;
@@ -179,7 +181,8 @@ export type StockRequest = {
   notes: string | null;
 };
 
-export const GENDERS = ["Unisex", "Mujer", "Hombre", "Niño", "Niña"] as const;
+/** Segmento comercial de la prenda; se muestra como Departamento en la aplicación. */
+export const GENDERS = ["Unisex", "Mujer", "Hombre", "Niña", "Niño", "Bebé"] as const;
 
 /** Catalogos precargados. Se fusionan con los valores ya existentes en los productos. */
 export const CATEGORY_OPTIONS = [
@@ -289,6 +292,7 @@ export const emptyProduct: ProductForm = {
   brand: "",
   size: "",
   color: "",
+  description: "",
   gender: "Unisex",
   season: "",
   internal_code: "",

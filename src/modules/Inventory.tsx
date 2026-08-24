@@ -227,7 +227,7 @@ export function Inventory({
   colors: string[];
   saveProduct: (form: ProductForm, id?: string) => Promise<void>;
   createProductMatrix: (
-    base: { name: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
+    base: { name: string; description: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
     combos: { size: string; color: string; qty: number }[],
   ) => Promise<void>;
   deleteProduct: (product: Product) => Promise<void>;
@@ -242,7 +242,9 @@ export function Inventory({
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [departmentFilter, setDepartmentFilter] = useState("__all__");
   const [categoryFilter, setCategoryFilter] = useState("__all__");
+  const [brandFilter, setBrandFilter] = useState("__all__");
   const [groupVariants, setGroupVariants] = useState(false);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [purchasing, setPurchasing] = useState(false);
@@ -265,7 +267,7 @@ export function Inventory({
     const q = localQuery.trim().toLowerCase();
     if (!q) return products;
     return products.filter((product) =>
-      [product.name, product.internal_code, product.sku, product.brand, product.category, product.size, product.color]
+      [product.name, product.description, product.internal_code, product.sku, product.brand, product.category, product.size, product.color, product.gender]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -273,9 +275,13 @@ export function Inventory({
     );
   }, [products, localQuery]);
 
-  const filteredByCategory =
-    categoryFilter === "__all__" ? searched : searched.filter((p) => (p.category || "Sin categoria") === categoryFilter);
-  const visible = filter === "low" ? filteredByCategory.filter((p) => stockState(p.stock, p.min_stock) !== "ok") : filteredByCategory;
+  const filteredByFacets = searched.filter((p) => {
+    const matchesDepartment = departmentFilter === "__all__" || (p.gender || "Sin departamento") === departmentFilter;
+    const matchesCategory = categoryFilter === "__all__" || (p.category || "Sin categoria") === categoryFilter;
+    const matchesBrand = brandFilter === "__all__" || (p.brand || "Sin marca") === brandFilter;
+    return matchesDepartment && matchesCategory && matchesBrand;
+  });
+  const visible = filter === "low" ? filteredByFacets.filter((p) => stockState(p.stock, p.min_stock) !== "ok") : filteredByFacets;
 
   // Agrupar variantes bajo su producto base solo cuando el usuario lo pide.
   const groups = useMemo(() => {
@@ -290,6 +296,14 @@ export function Inventory({
   }, [visible]);
   const categoryOptions = useMemo(
     () => Array.from(new Set(products.map((p) => p.category || "Sin categoria"))).sort((a, b) => a.localeCompare(b)),
+    [products],
+  );
+  const departmentOptions = useMemo(
+    () => Array.from(new Set(products.map((p) => p.gender || "Sin departamento"))).sort((a, b) => a.localeCompare(b)),
+    [products],
+  );
+  const brandOptions = useMemo(
+    () => Array.from(new Set(products.map((p) => p.brand || "Sin marca"))).sort((a, b) => a.localeCompare(b)),
     [products],
   );
 
@@ -330,7 +344,7 @@ export function Inventory({
             <input
               value={localQuery}
               onChange={(event) => setLocalQuery(event.target.value)}
-              placeholder="Buscar por nombre, codigo, marca, talla o color"
+              placeholder="Buscar por producto, detalle, código, marca, talla o color"
             />
           </div>
           <div className="inv-filters">
@@ -345,17 +359,41 @@ export function Inventory({
             </button>
           </div>
           {filter !== "orders" && (
-            <label className="inv-filter-select">
-              <span>Categoria</span>
-              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-                <option value="__all__">Todas las categorias</option>
-                {categoryOptions.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="inv-facet-filters">
+              <label className="inv-filter-select">
+                <span>Departamento</span>
+                <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
+                  <option value="__all__">Todos</option>
+                  {departmentOptions.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="inv-filter-select">
+                <span>Categoria</span>
+                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                  <option value="__all__">Todas</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="inv-filter-select">
+                <span>Marca</span>
+                <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}>
+                  <option value="__all__">Todas</option>
+                  {brandOptions.map((brand) => (
+                    <option key={brand} value={brand}>
+                      {brand}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           )}
           {filter !== "orders" && (
             <label className="inv-switch">
@@ -401,13 +439,15 @@ export function Inventory({
             <table className="inv-table">
               <thead>
                 <tr>
-                  <th>Producto</th>
-                  <th>Categoria y variante</th>
-                  <th className="num">Stock</th>
-                  <th className="num">Min.</th>
+                  <th>Descripción</th>
+                  <th>Departamento</th>
+                  <th>Categoria</th>
+                  <th>Marca</th>
+                  <th>Talla</th>
+                  <th>Color</th>
+                  <th className="num">Cantidad</th>
                   <th className="num">Costo</th>
                   <th className="num">Venta</th>
-                  <th className="num">Ganancia</th>
                   <th className="center">Estado</th>
                   <th className="actions-col">Acciones</th>
                 </tr>
@@ -546,21 +586,22 @@ function GroupRow({
         </strong>
         <span className="inv-code">{group.items.length} variantes</span>
       </td>
+      <td className="muted">—</td>
       <td>
         <strong className="inv-cat category-pill">{group.category || "Sin categoria"}</strong>
-        <span className="inv-code">{group.brand || "Sin marca"}</span>
       </td>
+      <td>{group.brand || "Sin marca"}</td>
+      <td className="muted">Variantes</td>
+      <td className="muted">—</td>
       <td className={`num ${state !== "ok" ? "stock-alert" : ""}`}>
         <strong>{totalStock}</strong>
         {incoming > 0 && <span className="incoming-tag">+{incoming} en camino</span>}
       </td>
       <td className="num muted">—</td>
-      <td className="num muted">—</td>
       <td className="num">
         {priceText}
         {anyOffer && <span className="inv-offer-tag">oferta</span>}
       </td>
-      <td className="num muted">—</td>
       <td className="center">
         <span className={`stock-badge ${state}`}>{stateLabel}</span>
       </td>
@@ -590,30 +631,30 @@ function ProductRow({
 }) {
   const state = stockState(product.stock, product.min_stock);
   const stateLabel = state === "out" ? "Agotado" : state === "low" ? "Stock bajo" : "En stock";
-  const variant = [product.brand, product.size, product.color, product.gender].filter(Boolean).join(" · ");
   const onOffer = product.discount_pct > 0;
-  // Precio y ganancia reales: si esta en oferta, se usa el precio rebajado.
-  const effectivePrice = onOffer ? product.price_final : product.sale_price;
-  const profit = effectivePrice - product.real_cost;
-  const profitPct = product.real_cost > 0 ? Math.round((profit / product.real_cost) * 100) : 0;
   return (
     <tr className={indent ? "variant-child" : ""}>
       <td>
         <strong className={indent ? "child-name" : ""}>{product.name}</strong>
-        <span className="inv-code">{product.internal_code ?? product.sku}</span>
+        <span className="inv-code">{product.description || product.internal_code || product.sku}</span>
       </td>
+      <td>{product.gender || "Sin departamento"}</td>
       <td>
         <strong className="inv-cat category-pill">{product.category || "Sin categoria"}</strong>
-        <span className="inv-code">
-          {product.color && <span className="color-dot" style={{ background: colorHex(product.color) }} />}
-          {variant || "Sin variante"}
-        </span>
+      </td>
+      <td>{product.brand || "Sin marca"}</td>
+      <td>{product.size || "—"}</td>
+      <td>
+        {product.color ? (
+          <span className="inv-color-value"><span className="color-dot" style={{ background: colorHex(product.color) }} />{product.color}</span>
+        ) : (
+          "—"
+        )}
       </td>
       <td className={`num ${state !== "ok" ? "stock-alert" : ""}`}>
         <strong>{product.stock}</strong>
         {product.incoming > 0 && <span className="incoming-tag">+{product.incoming} en camino</span>}
       </td>
-      <td className="num muted">{product.min_stock}</td>
       <td className="num muted">{lps(product.real_cost)}</td>
       <td className="num">
         {onOffer ? (
@@ -625,10 +666,6 @@ function ProductRow({
         ) : (
           lps(product.sale_price)
         )}
-      </td>
-      <td className="num">
-        <strong className={profit >= 0 ? "profit-pos" : "profit-neg"}>{lps(profit)}</strong>
-        {product.real_cost > 0 && <span className="inv-code">{profitPct}%</span>}
       </td>
       <td className="center">
         <span className={`stock-badge ${state}`}>{stateLabel}</span>
@@ -915,6 +952,7 @@ function ProductDrawer({
           brand: product.brand ?? "",
           size: product.size ?? "",
           color: product.color ?? "",
+          description: product.description ?? "",
           gender: product.gender ?? "Unisex",
           season: product.season ?? "",
           internal_code: product.internal_code ?? "",
@@ -1013,6 +1051,14 @@ function ProductDrawer({
               Nombre <em className="req">*</em>
               <input value={form.name} onChange={(event) => set("name", event.target.value)} placeholder="Ej. Camisa polo manga corta" />
             </label>
+            <label className="span-2">
+              Descripción / detalle
+              <input
+                value={form.description ?? ""}
+                onChange={(event) => set("description", event.target.value)}
+                placeholder="Ej. Manga corta, estampado frontal, tela algodón"
+              />
+            </label>
             <label>
               Categoria
               <Combobox value={form.category} onChange={(v) => set("category", v)} options={categoryOptions} placeholder="Elige o escribe una categoria" />
@@ -1027,7 +1073,7 @@ function ProductDrawer({
             </label>
             <ColorPickerField value={form.color ?? ""} onChange={(v) => set("color", v)} options={colorOptions} />
             <label>
-              Genero
+              Departamento
               <select value={form.gender ?? ""} onChange={(event) => set("gender", event.target.value)}>
                 {GENDERS.map((g) => (
                   <option key={g}>{g}</option>
@@ -1345,12 +1391,13 @@ function MatrixModal({
   sizes: string[];
   onClose: () => void;
   onSave: (
-    base: { name: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
+    base: { name: string; description: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
     combos: { size: string; color: string; qty: number }[],
   ) => Promise<void>;
 }) {
   const [base, setBase] = useState({
     name: "",
+    description: "",
     category: "",
     brand: "",
     gender: "Unisex",
@@ -1389,6 +1436,7 @@ function MatrixModal({
     await onSave(
       {
         name: base.name,
+        description: base.description,
         category: base.category,
         brand: base.brand,
         gender: base.gender,
@@ -1424,6 +1472,10 @@ function MatrixModal({
               Nombre <em className="req">*</em>
               <input value={base.name} onChange={(e) => setBase({ ...base, name: e.target.value })} placeholder="Ej. Camisa polo manga corta" />
             </label>
+            <label className="span-2">
+              Descripción / detalle
+              <input value={base.description} onChange={(e) => setBase({ ...base, description: e.target.value })} placeholder="Detalle común a todas las variantes" />
+            </label>
             <label>
               Categoria
               <Combobox value={base.category} onChange={(v) => setBase({ ...base, category: v })} options={categoryOptions} placeholder="Elige o escribe" />
@@ -1433,7 +1485,7 @@ function MatrixModal({
               <Combobox value={base.brand} onChange={(v) => setBase({ ...base, brand: v })} options={brands} placeholder="Escribe o elige" />
             </label>
             <label>
-              Genero
+              Departamento
               <select value={base.gender} onChange={(e) => setBase({ ...base, gender: e.target.value })}>
                 {GENDERS.map((g) => (
                   <option key={g}>{g}</option>

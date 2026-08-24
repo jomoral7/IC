@@ -500,6 +500,9 @@ td span {
 .sale-summary {
   position: sticky;
   top: 24px;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -735,6 +738,11 @@ select {
 .ticket-list {
   display: grid;
   gap: 10px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
   margin-bottom: 14px;
 }
 
@@ -1565,6 +1573,17 @@ td:last-child {
   text-transform: uppercase;
   color: var(--muted);
 }
+.inv-facet-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.inv-color-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 .inv-filter-select select {
   min-width: 170px;
   border: none;
@@ -2252,6 +2271,7 @@ td:last-child {
   .sale-summary {
     position: static;
     top: auto;
+    max-height: none;
   }
 }
 @media (max-width: 560px) {
@@ -2425,6 +2445,7 @@ td:last-child {
 
   .sale-summary .ticket-list {
     max-height: 32dvh;
+    flex: 0 1 auto;
     overflow-y: auto;
     padding-right: 2px;
   }
@@ -4724,7 +4745,7 @@ td:last-child {
   .diario-table,
   .purchase-table {
     width: 100%;
-    min-width: 640px;
+    min-width: 1180px;
   }
 
   .inv-table thead th,
