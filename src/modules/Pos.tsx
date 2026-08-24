@@ -98,15 +98,23 @@ export function POS({
   const [cashReceived, setCashReceived] = useState("");
 
   const subtotal = total;
-  const linePrice = (line: CartLine) => Number(((line.manual_discount_pct ?? 0) > 0
-    ? (line.base_price ?? line.sale_price) * (1 - (line.manual_discount_pct ?? 0) / 100)
-    : line.sale_price).toFixed(2));
+  const hasManualDiscount = (line: CartLine) => (line.manual_discount_pct ?? 0) > 0 || (line.manual_discount_amount ?? 0) > 0;
+  const linePrice = (line: CartLine) => {
+    const base = line.base_price ?? line.sale_price;
+    if ((line.manual_discount_mode ?? "percent") === "amount" && (line.manual_discount_amount ?? 0) > 0) {
+      return Number(Math.max(0, base - (line.manual_discount_amount ?? 0)).toFixed(2));
+    }
+    if ((line.manual_discount_pct ?? 0) > 0) {
+      return Number((base * (1 - (line.manual_discount_pct ?? 0) / 100)).toFixed(2));
+    }
+    return Number(line.sale_price.toFixed(2));
+  };
   // Cuanto se ahorra el cliente por productos en oferta (base - precio de venta).
   const offerSavings = cart.reduce(
-    (s, l) => s + Math.max(0, (l.manual_discount_pct ? 0 : (l.base_price ?? l.sale_price) - l.sale_price) * l.qty),
+    (s, l) => s + Math.max(0, (hasManualDiscount(l) ? 0 : (l.base_price ?? l.sale_price) - l.sale_price) * l.qty),
     0,
   );
-  const lineDiscountSavings = cart.reduce((s, l) => s + (l.manual_discount_pct
+  const lineDiscountSavings = cart.reduce((s, l) => s + (hasManualDiscount(l)
     ? Math.max(0, ((l.base_price ?? l.sale_price) - linePrice(l)) * l.qty)
     : 0), 0);
   const discountAmt = Math.min(
@@ -173,10 +181,22 @@ export function POS({
     setCart(cart.map((item) => (item.id === id ? { ...item, qty: Math.max(1, Math.min(qty, item.stock)) } : item)));
   }
   function setPrice(id: string, price: number) {
-    setCart(cart.map((item) => (item.id === id ? { ...item, sale_price: Math.max(0, price), manual_discount_pct: 0 } : item)));
+    setCart(cart.map((item) => (item.id === id ? { ...item, sale_price: Math.max(0, price), manual_discount_pct: 0, manual_discount_amount: 0 } : item)));
   }
   function setLineDiscount(id: string, pct: number) {
-    setCart(cart.map((item) => item.id === id ? { ...item, manual_discount_pct: Math.max(0, Math.min(100, pct)) } : item));
+    setCart(cart.map((item) => item.id === id ? { ...item, manual_discount_mode: "percent", manual_discount_pct: Math.max(0, Math.min(100, pct)), manual_discount_amount: 0 } : item));
+  }
+  function setLineDiscountAmount(id: string, amount: number) {
+    setCart(cart.map((item) => {
+      if (item.id !== id) return item;
+      const base = item.base_price ?? item.sale_price;
+      return { ...item, manual_discount_mode: "amount", manual_discount_pct: 0, manual_discount_amount: Math.max(0, Math.min(base, amount)) };
+    }));
+  }
+  function toggleLineDiscountMode(id: string) {
+    setCart(cart.map((item) => item.id === id
+      ? { ...item, manual_discount_mode: (item.manual_discount_mode ?? "percent") === "percent" ? "amount" : "percent", manual_discount_pct: 0, manual_discount_amount: 0 }
+      : item));
   }
 
   async function submit() {
@@ -276,10 +296,10 @@ export function POS({
               <div className="ticket-info">
                 <strong title={line.name}>{line.name}</strong>
                 <span className="ticket-variant">{[line.internal_code ?? line.sku, line.size || "Sin talla", line.color || "Sin color"].filter(Boolean).join(" · ")}</span>
-                {!line.manual_discount_pct && line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
+                {!hasManualDiscount(line) && line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
                   <span className="ticket-offer"><BadgePercent size={12} /> Oferta -{line.discount_pct}%</span>
                 )}
-                {(line.manual_discount_pct ?? 0) > 0 && <span className="ticket-manual-offer"><BadgePercent size={12} /> Descuento manual -{line.manual_discount_pct}%</span>}
+                {hasManualDiscount(line) && <span className="ticket-manual-offer"><BadgePercent size={12} /> Descuento manual {line.manual_discount_mode === "amount" ? `-${lps(line.manual_discount_amount ?? 0)} c/u` : `-${line.manual_discount_pct}%`}</span>}
               </div>
               <div className="ticket-controls" aria-label={`Controles para ${line.name}`}>
                 <div className="qty-stepper">
@@ -318,7 +338,7 @@ export function POS({
                   )}
                 </div>
                 {!lockSeller && (
-                  <button className={`line-discount-button ${line.manual_discount_pct ? "active" : ""}`} title="Descuento de esta prenda" aria-label={`Descuento de ${line.name}`} onClick={() => setDiscountingId(discountingId === line.id ? null : line.id)}>
+                  <button className={`line-discount-button ${hasManualDiscount(line) ? "active" : ""}`} title="Descuento de esta prenda" aria-label={`Descuento de ${line.name}`} onClick={() => setDiscountingId(discountingId === line.id ? null : line.id)}>
                     <BadgePercent size={15} />
                   </button>
                 )}
@@ -330,8 +350,18 @@ export function POS({
               {discountingId === line.id && !lockSeller && (
                 <div className="line-discount-editor">
                   <span>Descuento de esta prenda</span>
-                  <div><b>%</b><input autoFocus type="number" min={0} max={100} value={line.manual_discount_pct ?? 0} onChange={(e) => setLineDiscount(line.id, Number(e.target.value))} /></div>
-                  <small>{line.discount_pct > 0 ? "Reemplaza la oferta automática de esta prenda." : "Se aplica solo a esta prenda."}</small>
+                  <div>
+                    <button type="button" className="line-discount-mode" title="Cambiar entre porcentaje y lempiras" onClick={() => toggleLineDiscountMode(line.id)}>{line.manual_discount_mode === "amount" ? "L" : "%"}</button>
+                    <input
+                      autoFocus
+                      type="number"
+                      min={0}
+                      max={line.manual_discount_mode === "amount" ? (line.base_price ?? line.sale_price) : 100}
+                      value={line.manual_discount_mode === "amount" ? (line.manual_discount_amount ?? 0) : (line.manual_discount_pct ?? 0)}
+                      onChange={(e) => line.manual_discount_mode === "amount" ? setLineDiscountAmount(line.id, Number(e.target.value)) : setLineDiscount(line.id, Number(e.target.value))}
+                    />
+                  </div>
+                  <small>{line.discount_pct > 0 ? "Reemplaza la oferta automática de esta prenda." : line.manual_discount_mode === "amount" ? "Monto por unidad. Toca L para cambiar a %." : "Porcentaje por unidad. Toca % para cambiar a L."}</small>
                 </div>
               )}
             </div>
@@ -435,8 +465,8 @@ export function POS({
             <strong>{lps(grandTotal)}</strong>
           </div>
           {canPreviewInvoice && (
-            <button className="secondary-button pos-preview-button" disabled={cart.length === 0} onClick={openInvoicePreview} title="Vista previa sin registrar la venta">
-              <Eye size={18} /> Vista previa
+            <button className="secondary-button pos-preview-button" disabled={cart.length === 0} onClick={openInvoicePreview} title="Vista previa sin registrar la venta" aria-label="Vista previa de factura sin registrar la venta">
+              <Eye size={19} />
             </button>
           )}
           <button className="primary-button pos-charge-button" disabled={cart.length === 0 || issuing} onClick={openCheckout}>

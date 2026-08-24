@@ -155,7 +155,14 @@ export type ProductForm = Omit<
 > & { stock: number };
 
 /** Producto temporal del ticket. El descuento manual sustituye una oferta automatica de esa linea. */
-export type CartLine = Product & { qty: number; base_price?: number; manual_discount_pct?: number };
+export type CartLine = Product & {
+  qty: number;
+  base_price?: number;
+  manual_discount_mode?: "percent" | "amount";
+  manual_discount_pct?: number;
+  /** Descuento fijo por unidad en lempiras. */
+  manual_discount_amount?: number;
+};
 
 export type UserProfile = {
   id: string;
