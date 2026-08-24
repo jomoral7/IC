@@ -57,6 +57,9 @@ export function POS({
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [discountingId, setDiscountingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
@@ -93,17 +96,33 @@ export function POS({
   const selectedSeller = sellers.find((s) => s.id === effectiveSellerId) ?? null;
   const commission = selectedSeller ? taxable * selectedSeller.commission_rate : 0;
 
+  const departments = useMemo(
+    () => Array.from(new Set(products.map((p) => p.gender).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "es")),
+    [products],
+  );
+  const categories = useMemo(
+    () => Array.from(new Set(products.map((p) => p.category).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "es")),
+    [products],
+  );
+  const brands = useMemo(
+    () => Array.from(new Set(products.map((p) => p.brand).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "es")),
+    [products],
+  );
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter((p) =>
-      [p.name, p.internal_code, p.sku, p.barcode, p.brand, p.size, p.color, p.gender, p.category, p.description]
+    return products.filter((p) => {
+      if (departmentFilter && p.gender !== departmentFilter) return false;
+      if (categoryFilter && p.category !== categoryFilter) return false;
+      if (brandFilter && p.brand !== brandFilter) return false;
+      if (!q) return true;
+      return [p.name, p.internal_code, p.sku, p.barcode, p.brand, p.size, p.color, p.gender, p.category, p.description]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
-        .includes(q),
-    );
-  }, [products, query]);
+        .includes(q);
+    });
+  }, [products, query, departmentFilter, categoryFilter, brandFilter]);
 
   // Al escanear: si el codigo coincide con un producto, lo agrega directo al carrito.
   function handleScan(code: string) {
@@ -280,9 +299,9 @@ export function POS({
             </label>
             <div className="pos-compact-control payment-control">
               <span className="pos-control-label">Pago</span>
-              <div className="payment-toggle compact-payment">
-              <button className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>Contado</button>
-              <button className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Crédito</button>
+              <div className="payment-toggle compact-payment" role="group" aria-label="Forma de pago">
+                <button type="button" className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>Contado</button>
+                <button type="button" className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Crédito</button>
               </div>
             </div>
             {!lockSeller && (
@@ -403,6 +422,34 @@ export function POS({
               <button className="pos-scan-button" title="Escanear con cámara" aria-label="Escanear con cámara" onClick={() => { setCatalogOpen(false); setScanning(true); }}>
                 <ScanLine size={18} />
               </button>
+            </div>
+            <div className="product-picker-filters" aria-label="Filtros del catálogo">
+              <label className="product-picker-filter">
+                <span>Departamento</span>
+                <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
+                  <option value="">Todos</option>
+                  {departments.map((department) => <option key={department} value={department}>{department}</option>)}
+                </select>
+              </label>
+              <label className="product-picker-filter">
+                <span>Categoría</span>
+                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                  <option value="">Todas</option>
+                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </label>
+              <label className="product-picker-filter">
+                <span>Marca</span>
+                <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}>
+                  <option value="">Todas</option>
+                  {brands.map((brand) => <option key={brand} value={brand}>{brand}</option>)}
+                </select>
+              </label>
+              {(departmentFilter || categoryFilter || brandFilter) && (
+                <button className="product-filter-clear" type="button" onClick={() => { setDepartmentFilter(""); setCategoryFilter(""); setBrandFilter(""); }}>
+                  <X size={15} /> Limpiar filtros
+                </button>
+              )}
             </div>
             {scanMessage && <div className="pos-scan-feedback"><span>{scanMessage}</span><button onClick={() => setScanMessage("")}>Cerrar</button></div>}
             <div className="product-picker-head">
