@@ -2847,11 +2847,14 @@ td:last-child {
     font-size: 10px;
     font-weight: 800;
     letter-spacing: .06em;
+    text-align: center;
     text-transform: uppercase;
   }
 
   .pos-options .compact-payment {
     display: grid;
+    grid-column: auto;
+    grid-row: auto;
     grid-template-columns: 1fr 1fr;
     gap: 2px;
     width: 100%;
@@ -2896,6 +2899,8 @@ td:last-child {
     grid-column: 1 / -1;
     grid-row: 1;
     align-self: start;
+    justify-self: stretch;
+    text-align: center;
   }
 
   .pos-options .discount-choice {
@@ -2981,6 +2986,15 @@ td:last-child {
 
   .pos-checkout-dock .brk-row.saving b {
     color: #0b7a60;
+  }
+
+  .pos-checkout-dock .brk-row.commission {
+    padding-left: 14px;
+    border-left: 1px solid var(--line);
+  }
+
+  .pos-checkout-dock .brk-row.commission b {
+    color: #8a5a09;
   }
 
   .pos-checkout-dock .total-box {

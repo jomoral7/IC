@@ -345,11 +345,6 @@ export function POS({
               <span>Aplicar ISV 15%</span>
               <input type="checkbox" checked={applyTax} onChange={(e) => setApplyTax(e.target.checked)} />
             </label>
-            {selectedSeller && (
-              <div className="commission-note">
-                Comisión: <strong>{lps(commission)}</strong> · {selectedSeller.name}
-              </div>
-            )}
           </div>
         </section>
 
@@ -363,6 +358,12 @@ export function POS({
             {lineDiscountSavings > 0 && <div className="brk-row saving"><span>Desc. prendas</span><b>-{lps(lineDiscountSavings)}</b></div>}
             {discountAmt > 0 && <div className="brk-row saving"><span>Desc. ticket</span><b>-{lps(discountAmt)}</b></div>}
             {tax > 0 && <div className="brk-row"><span>ISV</span><b>{lps(tax)}</b></div>}
+            {selectedSeller && (
+              <div className="brk-row commission">
+                <span>Comisión {Math.round(selectedSeller.commission_rate * 100)}%</span>
+                <b>{lps(commission)}</b>
+              </div>
+            )}
           </div>
           <div className="total-box">
             <span>Total</span>
