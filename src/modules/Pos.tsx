@@ -221,49 +221,6 @@ export function POS({
           </button>
         </div>
 
-        <label>
-          Cliente
-          <input
-            list="dl-customers"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Cliente final o escribe un nombre"
-          />
-          <datalist id="dl-customers">
-            {customers.map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
-          </datalist>
-        </label>
-
-        <label>
-          Vendedor
-          {lockSeller ? (
-            <input
-              readOnly
-              value={selectedSeller ? selectedSeller.name : "Tu usuario no esta vinculado a un vendedor"}
-            />
-          ) : (
-            <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
-              <option value="">Sin vendedor</option>
-              {activeSellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({Math.round(s.commission_rate * 100)}%)
-                </option>
-              ))}
-            </select>
-          )}
-        </label>
-
-        <div className="payment-toggle">
-          <button className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>
-            Contado
-          </button>
-          <button className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>
-            Credito
-          </button>
-        </div>
-
         <div className="ticket-list editable">
           {cart.length === 0 && (
             <EmptyWork title="Carrito vacio" text="Selecciona productos del listado para facturar." />
@@ -326,12 +283,71 @@ export function POS({
           ))}
         </div>
 
-        {selectedSeller && (
-          <div className="commission-note">
-            Comision {selectedSeller.name}: <strong>{lps(commission)}</strong> ({Math.round(selectedSeller.commission_rate * 100)}% sobre venta sin ISV)
-            <span> · solo interno, no sale en la factura</span>
+        <details className="pos-options">
+          <summary>Datos de venta, pago y descuento</summary>
+          <div className="pos-options-body">
+            <label className="pos-option-field customer-field">
+              <span>Cliente</span>
+              <input
+                list="dl-customers"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Cliente final o escribe un nombre"
+              />
+              <datalist id="dl-customers">
+                {customers.map((c) => (
+                  <option key={c.id} value={c.name} />
+                ))}
+              </datalist>
+            </label>
+            <label className="pos-option-field">
+              <span>Vendedor</span>
+              {lockSeller ? (
+                <input readOnly value={selectedSeller ? selectedSeller.name : "Sin vendedor vinculado"} />
+              ) : (
+                <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
+                  <option value="">Sin vendedor</option>
+                  {activeSellers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({Math.round(s.commission_rate * 100)}%)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <div className="payment-toggle compact-payment">
+              <button className={terms === "cash" ? "active" : ""} onClick={() => setTerms("cash")}>Contado</button>
+              <button className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Crédito</button>
+            </div>
+            {!lockSeller && (
+              <div className="discount-controls">
+                <label>
+                  <span>Descuento %</span>
+                  <input type="number" min={0} max={100} value={discountPct} onChange={(e) => {
+                    setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))));
+                    setDiscountAmount(0);
+                  }} />
+                </label>
+                <label>
+                  <span>Descuento L</span>
+                  <input type="number" min={0} max={subtotal} value={discountAmount} onChange={(e) => {
+                    setDiscountAmount(Math.max(0, Math.min(subtotal, Number(e.target.value))));
+                    setDiscountPct(0);
+                  }} />
+                </label>
+              </div>
+            )}
+            <label className="compact-tax">
+              <span>Aplicar ISV 15%</span>
+              <input type="checkbox" checked={applyTax} onChange={(e) => setApplyTax(e.target.checked)} />
+            </label>
+            {selectedSeller && (
+              <div className="commission-note">
+                Comisión: <strong>{lps(commission)}</strong> · {selectedSeller.name}
+              </div>
+            )}
           </div>
-        )}
+        </details>
 
         <div className="sale-breakdown">
           {offerSavings > 0 && (
@@ -344,46 +360,12 @@ export function POS({
             <span>Subtotal</span>
             <b>{lps(subtotal)}</b>
           </div>
-          {!lockSeller && (
-            <>
-              <label className="brk-row brk-input">
-                <span>Descuento extra %</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={discountPct}
-                  onChange={(e) => {
-                    setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))));
-                    setDiscountAmount(0);
-                  }}
-                />
-              </label>
-              <label className="brk-row brk-input">
-                <span>Descuento extra L</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={subtotal}
-                  value={discountAmount}
-                  onChange={(e) => {
-                    setDiscountAmount(Math.max(0, Math.min(subtotal, Number(e.target.value))));
-                    setDiscountPct(0);
-                  }}
-                />
-              </label>
-            </>
-          )}
           {discountAmt > 0 && (
             <div className="brk-row muted">
               <span>Descuento extra</span>
               <b>- {lps(discountAmt)}</b>
             </div>
           )}
-          <label className="brk-row brk-toggle">
-            <span>ISV 15%</span>
-            <input type="checkbox" checked={applyTax} onChange={(e) => setApplyTax(e.target.checked)} />
-          </label>
           {tax > 0 && (
             <div className="brk-row muted">
               <span>ISV (15%)</span>

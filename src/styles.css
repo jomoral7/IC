@@ -737,7 +737,7 @@ select {
 
 .ticket-list {
   display: grid;
-  gap: 10px;
+  gap: 7px;
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
@@ -749,9 +749,9 @@ select {
 .ticket-line {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 10px;
+  gap: 6px;
+  padding: 9px 10px;
+  margin-bottom: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
@@ -764,13 +764,13 @@ select {
 }
 .ticket-line .ticket-info strong {
   color: var(--navy);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.3;
 }
 .ticket-line .ticket-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 .ticket-line .ticket-controls .line-total {
   margin-left: auto;
@@ -787,8 +787,8 @@ select {
   overflow: hidden;
 }
 .qty-stepper button {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border: none;
   background: var(--paper);
   color: var(--navy);
@@ -801,7 +801,7 @@ select {
   cursor: default;
 }
 .qty-stepper span {
-  min-width: 30px;
+  min-width: 26px;
   text-align: center;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -814,7 +814,7 @@ select {
   gap: 6px;
   border: 1px dashed var(--line);
   border-radius: 8px;
-  padding: 5px 10px;
+  padding: 4px 8px;
   background: var(--paper);
   color: var(--navy);
   font-weight: 600;
@@ -851,6 +851,96 @@ select {
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+
+/* POS: las opciones son secundarias. El carrito es la zona de trabajo principal. */
+.pos-options {
+  margin: 0 18px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.pos-options summary {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.pos-options summary::-webkit-details-marker { display: none; }
+.pos-options summary::after {
+  content: "+";
+  margin-left: auto;
+  font-size: 18px;
+  font-weight: 500;
+}
+.pos-options[open] summary::after { content: "−"; }
+.pos-options-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+.pos-option-field,
+.discount-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.pos-option-field span,
+.discount-controls span,
+.compact-tax span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.pos-option-field input,
+.pos-option-field select,
+.discount-controls input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+.customer-field { grid-column: 1 / -1; }
+.compact-payment {
+  align-self: end;
+  min-height: 34px;
+  margin: 0;
+}
+.compact-payment button { padding: 6px 8px; font-size: 12px; }
+.discount-controls {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.discount-controls input { text-align: right; }
+.compact-tax {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding-top: 2px;
+}
+.compact-tax input { width: 18px; height: 18px; }
+.pos-options .commission-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 7px 8px;
+  font-size: 11px;
 }
 .ticket-remove {
   width: 28px;
@@ -2430,6 +2520,7 @@ td:last-child {
   .sale-summary > label,
   .sale-summary .payment-toggle,
   .sale-summary .ticket-list,
+  .sale-summary .pos-options,
   .sale-summary .commission-note,
   .sale-summary .total-box,
   .sale-summary > button,
