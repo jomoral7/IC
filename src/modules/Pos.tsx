@@ -59,6 +59,7 @@ export function POS({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [discountMode, setDiscountMode] = useState<"percent" | "amount">("percent");
   const [applyTax, setApplyTax] = useState(false);
   const [lastSale, setLastSale] = useState<any | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -131,6 +132,7 @@ export function POS({
     setSellerId("");
     setDiscountPct(0);
     setDiscountAmount(0);
+    setDiscountMode("percent");
     setApplyTax(false);
   }
 
@@ -227,21 +229,14 @@ export function POS({
           )}
           {cart.map((line) => (
             <div className="ticket-line" key={line.id}>
-              <div className="ticket-top">
-                <div className="ticket-info">
-                  <strong>{line.name}</strong>
-                  <span>{line.internal_code ?? line.sku}</span>
-                  {line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
-                    <span className="ticket-offer">
-                      Oferta -{line.discount_pct}% · antes <s>{lps(line.base_price)}</s>
-                    </span>
-                  )}
-                </div>
-                <button className="ticket-remove" title="Quitar" onClick={() => setCart(cart.filter((item) => item.id !== line.id))}>
-                  <X size={15} />
-                </button>
+              <div className="ticket-info">
+                <strong>{line.name}</strong>
+                <span>{line.internal_code ?? line.sku}</span>
+                {line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
+                  <span className="ticket-offer">Oferta -{line.discount_pct}%</span>
+                )}
               </div>
-              <div className="ticket-controls">
+              <div className="ticket-controls" aria-label={`Controles para ${line.name}`}>
                 <div className="qty-stepper">
                   <button onClick={() => setQty(line.id, line.qty - 1)} disabled={line.qty <= 1} aria-label="Menos">
                     <Minus size={14} />
@@ -279,6 +274,9 @@ export function POS({
                 </div>
                 <b className="line-total">{lps(line.qty * line.sale_price)}</b>
               </div>
+              <button className="ticket-remove" title={`Quitar ${line.name}`} aria-label={`Quitar ${line.name}`} onClick={() => setCart(cart.filter((item) => item.id !== line.id))}>
+                <X size={16} />
+              </button>
             </div>
           ))}
         </div>
@@ -320,20 +318,40 @@ export function POS({
               <button className={terms === "credit" ? "active" : ""} onClick={() => setTerms("credit")}>Crédito</button>
             </div>
             {!lockSeller && (
-              <div className="discount-controls">
-                <label>
-                  <span>Descuento %</span>
-                  <input type="number" min={0} max={100} value={discountPct} onChange={(e) => {
-                    setDiscountPct(Math.max(0, Math.min(100, Number(e.target.value))));
-                    setDiscountAmount(0);
-                  }} />
-                </label>
-                <label>
-                  <span>Descuento L</span>
-                  <input type="number" min={0} max={subtotal} value={discountAmount} onChange={(e) => {
-                    setDiscountAmount(Math.max(0, Math.min(subtotal, Number(e.target.value))));
-                    setDiscountPct(0);
-                  }} />
+              <div className="discount-control">
+                <span className="discount-label">Descuento adicional</span>
+                <div className="discount-choice" role="group" aria-label="Tipo de descuento">
+                  <button
+                    type="button"
+                    className={discountMode === "percent" ? "active" : ""}
+                    onClick={() => { setDiscountMode("percent"); setDiscountAmount(0); }}
+                  >
+                    % Porcentaje
+                  </button>
+                  <button
+                    type="button"
+                    className={discountMode === "amount" ? "active" : ""}
+                    onClick={() => { setDiscountMode("amount"); setDiscountPct(0); }}
+                  >
+                    L Monto
+                  </button>
+                </div>
+                <label className="discount-input">
+                  <span>{discountMode === "percent" ? "Porcentaje a descontar" : "Monto a descontar"}</span>
+                  <div>
+                    <b>{discountMode === "percent" ? "%" : "L"}</b>
+                    <input
+                      type="number"
+                      min={0}
+                      max={discountMode === "percent" ? 100 : subtotal}
+                      value={discountMode === "percent" ? discountPct : discountAmount}
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+                        if (discountMode === "percent") setDiscountPct(Math.max(0, Math.min(100, value)));
+                        else setDiscountAmount(Math.max(0, Math.min(subtotal, value)));
+                      }}
+                    />
+                  </div>
                 </label>
               </div>
             )}
