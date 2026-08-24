@@ -905,7 +905,10 @@ export function App() {
     const matched = customerName
       ? customers.find((c) => c.name.toLowerCase() === customerName.toLowerCase())
       : undefined;
-    const subtotal = cart.reduce((sum, line) => sum + line.qty * line.sale_price, 0);
+    const unitPrice = (line: CartLine) => Number(((line.manual_discount_pct ?? 0) > 0
+      ? (line.base_price ?? line.sale_price) * (1 - (line.manual_discount_pct ?? 0) / 100)
+      : line.sale_price).toFixed(2));
+    const subtotal = cart.reduce((sum, line) => sum + line.qty * unitPrice(line), 0);
     // El descuento puede ser porcentaje o una cantidad fija, nunca superior al subtotal.
     const percentDiscount = subtotal * (Math.max(0, discountPct) / 100);
     const discount = Number(Math.min(subtotal, discountAmount > 0 ? discountAmount : percentDiscount).toFixed(2));
@@ -937,15 +940,19 @@ export function App() {
       return;
     }
     await supabase.from("document_items").insert(
-      cart.map((line) => ({
+      cart.map((line) => {
+        const price = unitPrice(line);
+        const original = line.base_price ?? line.sale_price;
+        return {
         document_id: document.id,
         product_id: line.id,
         quantity: line.qty,
         unit_cost: line.real_cost,
-        unit_price: line.sale_price,
-        unit_price_original: line.base_price ?? line.sale_price,
-        line_total: line.qty * line.sale_price,
-      })),
+        unit_price: price,
+        unit_price_original: original,
+        discount: Number(((original - price) * line.qty).toFixed(2)),
+        line_total: line.qty * price,
+      };}),
     );
     if (paymentTerms === "cash") {
       await supabase.from("payments").insert({ document_id: document.id, amount: total, method: "cash" });
@@ -960,8 +967,8 @@ export function App() {
         movement_type: "sale",
         quantity: line.qty,
         unit_cost: line.real_cost,
-        unit_price: line.sale_price,
-        notes: `Venta POS ${document.document_number}`,
+        unit_price: unitPrice(line),
+        notes: `Venta POS ${document.document_number}${line.manual_discount_pct ? ` · Desc. manual ${line.manual_discount_pct}%` : ""}`,
       });
     }
 
@@ -1563,7 +1570,12 @@ export function App() {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
-  const cartTotal = cart.reduce((sum, line) => sum + line.qty * line.sale_price, 0);
+  const cartTotal = cart.reduce((sum, line) => {
+    const price = (line.manual_discount_pct ?? 0) > 0
+      ? (line.base_price ?? line.sale_price) * (1 - (line.manual_discount_pct ?? 0) / 100)
+      : line.sale_price;
+    return sum + line.qty * price;
+  }, 0);
   const categories = Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort();
   const brands = Array.from(new Set(products.map((p) => p.brand).filter(Boolean) as string[])).sort();
   const sizes = Array.from(new Set(products.map((p) => p.size).filter(Boolean) as string[])).sort();

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
+import { BadgePercent, Check, ChevronDown, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CartLine, Party, Product, Seller } from "../types";
 import { lps, stockState } from "../lib/format";
@@ -57,6 +57,7 @@ export function POS({
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [discountingId, setDiscountingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountMode, setDiscountMode] = useState<"percent" | "amount">("percent");
@@ -66,11 +67,17 @@ export function POS({
   const [scanMessage, setScanMessage] = useState("");
 
   const subtotal = total;
+  const linePrice = (line: CartLine) => Number(((line.manual_discount_pct ?? 0) > 0
+    ? (line.base_price ?? line.sale_price) * (1 - (line.manual_discount_pct ?? 0) / 100)
+    : line.sale_price).toFixed(2));
   // Cuanto se ahorra el cliente por productos en oferta (base - precio de venta).
   const offerSavings = cart.reduce(
-    (s, l) => s + Math.max(0, ((l.base_price ?? l.sale_price) - l.sale_price) * l.qty),
+    (s, l) => s + Math.max(0, (l.manual_discount_pct ? 0 : (l.base_price ?? l.sale_price) - l.sale_price) * l.qty),
     0,
   );
+  const lineDiscountSavings = cart.reduce((s, l) => s + (l.manual_discount_pct
+    ? Math.max(0, ((l.base_price ?? l.sale_price) - linePrice(l)) * l.qty)
+    : 0), 0);
   const discountAmt = Math.min(
     subtotal,
     Math.max(0, Number((discountAmount > 0 ? discountAmount : subtotal * (discountPct / 100)).toFixed(2))),
@@ -115,7 +122,10 @@ export function POS({
     setCart(cart.map((item) => (item.id === id ? { ...item, qty: Math.max(1, Math.min(qty, item.stock)) } : item)));
   }
   function setPrice(id: string, price: number) {
-    setCart(cart.map((item) => (item.id === id ? { ...item, sale_price: Math.max(0, price) } : item)));
+    setCart(cart.map((item) => (item.id === id ? { ...item, sale_price: Math.max(0, price), manual_discount_pct: 0 } : item)));
+  }
+  function setLineDiscount(id: string, pct: number) {
+    setCart(cart.map((item) => item.id === id ? { ...item, manual_discount_pct: Math.max(0, Math.min(100, pct)) } : item));
   }
 
   async function submit() {
@@ -166,8 +176,8 @@ export function POS({
               placeholder="Buscar o escanear producto por nombre / codigo"
             />
           </div>
-          <button className="secondary-button" onClick={() => setScanning(true)}>
-            <ScanLine size={16} /> Escanear (camara)
+          <button className="pos-scan-button" title="Escanear con cámara" aria-label="Escanear con cámara" onClick={() => setScanning(true)}>
+            <ScanLine size={18} />
           </button>
         </div>
         {scanMessage && (
@@ -189,9 +199,9 @@ export function POS({
               <button key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}>
                 <div>
                   <strong>{product.name}</strong>
-                  <span>
-                    {product.internal_code ?? product.sku} · {product.size || "Sin talla"} ·{" "}
-                    {product.color || "Sin color"}
+                  <span className="catalog-code">{product.internal_code ?? product.sku}</span>
+                  <span className="catalog-meta">
+                    {[product.gender, product.category, product.brand, product.size, product.color].filter(Boolean).join(" · ") || "Sin detalle"}
                   </span>
                 </div>
                 <em className={stockState(product.stock, product.min_stock) !== "ok" ? "stock-alert" : ""}>
@@ -232,9 +242,10 @@ export function POS({
               <div className="ticket-info">
                 <strong>{line.name}</strong>
                 <span>{line.internal_code ?? line.sku}</span>
-                {line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
-                  <span className="ticket-offer">Oferta -{line.discount_pct}%</span>
+                {!line.manual_discount_pct && line.discount_pct > 0 && line.base_price && line.base_price > line.sale_price && (
+                  <span className="ticket-offer"><BadgePercent size={12} /> Oferta -{line.discount_pct}%</span>
                 )}
+                {(line.manual_discount_pct ?? 0) > 0 && <span className="ticket-manual-offer"><BadgePercent size={12} /> Descuento manual -{line.manual_discount_pct}%</span>}
               </div>
               <div className="ticket-controls" aria-label={`Controles para ${line.name}`}>
                 <div className="qty-stepper">
@@ -272,8 +283,20 @@ export function POS({
                     </button>
                   )}
                 </div>
-                <b className="line-total">{lps(line.qty * line.sale_price)}</b>
+                {!lockSeller && (
+                  <button className={`line-discount-button ${line.manual_discount_pct ? "active" : ""}`} title="Descuento de esta prenda" aria-label={`Descuento de ${line.name}`} onClick={() => setDiscountingId(discountingId === line.id ? null : line.id)}>
+                    <BadgePercent size={15} />
+                  </button>
+                )}
+                <b className="line-total">{lps(line.qty * linePrice(line))}</b>
               </div>
+              {discountingId === line.id && !lockSeller && (
+                <div className="line-discount-editor">
+                  <span>Descuento de esta prenda</span>
+                  <div><b>%</b><input autoFocus type="number" min={0} max={100} value={line.manual_discount_pct ?? 0} onChange={(e) => setLineDiscount(line.id, Number(e.target.value))} /></div>
+                  <small>{line.discount_pct > 0 ? "Reemplaza la oferta automática de esta prenda." : "Se aplica solo a esta prenda."}</small>
+                </div>
+              )}
               <button className="ticket-remove" title={`Quitar ${line.name}`} aria-label={`Quitar ${line.name}`} onClick={() => setCart(cart.filter((item) => item.id !== line.id))}>
                 <X size={16} />
               </button>
@@ -372,6 +395,12 @@ export function POS({
             <div className="brk-row muted">
               <span>Ahorro por ofertas</span>
               <b>- {lps(offerSavings)}</b>
+            </div>
+          )}
+          {lineDiscountSavings > 0 && (
+            <div className="brk-row muted">
+              <span>Descuentos por prenda</span>
+              <b>- {lps(lineDiscountSavings)}</b>
             </div>
           )}
           <div className="brk-row">

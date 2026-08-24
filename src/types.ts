@@ -154,7 +154,8 @@ export type ProductForm = Omit<
   "id" | "active" | "stock" | "stockByLocation" | "incoming" | "discount_pct" | "price_final" | "created_at"
 > & { stock: number };
 
-export type CartLine = Product & { qty: number; base_price?: number };
+/** Producto temporal del ticket. El descuento manual sustituye una oferta automatica de esa linea. */
+export type CartLine = Product & { qty: number; base_price?: number; manual_discount_pct?: number };
 
 export type UserProfile = {
   id: string;

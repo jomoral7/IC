@@ -465,8 +465,8 @@ td span {
 
 .pos-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
-  gap: 18px;
+  grid-template-columns: minmax(360px, .85fr) minmax(620px, 1.35fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -485,7 +485,7 @@ td span {
 
 .pos-table-head {
   display: grid;
-  grid-template-columns: 1fr 110px 160px;
+  grid-template-columns: 1fr 76px 110px;
   gap: 12px;
   padding: 16px 22px;
   background: #f8fafc;
@@ -684,7 +684,7 @@ select {
   color: var(--ink);
   text-align: left;
   display: grid;
-  grid-template-columns: 1fr 110px 160px;
+  grid-template-columns: 1fr 76px 110px;
   gap: 12px;
   align-items: center;
 }
@@ -699,12 +699,20 @@ select {
 }
 
 .catalog-list button span {
-  margin-top: 5px;
+  margin-top: 3px;
   color: var(--navy);
   font-weight: 800;
   grid-column: 1;
   color: var(--muted);
   font-size: 12px;
+}
+.catalog-list button .catalog-code { font-size: 11px; font-weight: 800; }
+.catalog-list button .catalog-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
 }
 
 .catalog-list button b {
@@ -769,6 +777,21 @@ select {
   gap: 8px;
   margin-top: 7px;
 }
+.ticket-offer,
+.ticket-manual-offer {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-top: 5px !important;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #fff5d8;
+  color: #8a5a09 !important;
+  font-size: 10px !important;
+  font-weight: 800;
+}
+.ticket-manual-offer { background: #e8f3fb; color: #17617e !important; }
 .ticket-line .ticket-controls .line-total {
   margin-left: auto;
   color: var(--navy);
@@ -849,6 +872,35 @@ select {
   place-items: center;
   cursor: pointer;
 }
+.line-discount-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: #687b8a;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.line-discount-button:hover,
+.line-discount-button.active { border-color: var(--mustard); background: #fff8e9; color: #8a5a09; }
+.line-discount-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 11px;
+}
+.line-discount-editor > span { margin: 0; font-size: 11px; font-weight: 800; }
+.line-discount-editor > div { display: inline-flex; align-items: center; overflow: hidden; height: 30px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.line-discount-editor b { display: grid; width: 27px; height: 100%; place-items: center; background: var(--paper); color: var(--navy); }
+.line-discount-editor input { width: 52px; height: 100%; border: 0; padding: 2px 6px; font-weight: 700; text-align: right; outline: 0; }
+.line-discount-editor small { margin-left: auto; font-size: 10px; }
 
 /* POS: las opciones son secundarias. El carrito es la zona de trabajo principal. */
 .pos-options {
@@ -857,6 +909,19 @@ select {
   border-radius: 10px;
   background: var(--paper);
 }
+.pos-scan-button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+}
+.pos-scan-button:hover { border-color: var(--mustard); background: #fff8e9; }
 .pos-options summary {
   display: flex;
   align-items: center;
@@ -2628,6 +2693,9 @@ td:last-child {
     grid-column: 1 / -1;
     justify-self: end;
   }
+
+  .line-discount-editor { flex-wrap: wrap; }
+  .line-discount-editor small { width: 100%; margin-left: 0; }
 }
 
 /* ============================================================
@@ -4998,3 +5066,6 @@ td:last-child {
   }
 
   .row-actions {
+    min-width: 0;
+  }
+}
