@@ -2296,6 +2296,17 @@ td:last-child {
   font-size: 12px;
   line-height: 1.35;
 }
+.inv-table .inv-description-cell > strong,
+.inv-table .inv-description-cell > span {
+  display: block;
+}
+.inv-table .inv-description-detail,
+.product-picker .catalog-detail {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
 .inv-table .inv-cat {
   text-transform: capitalize;
 }
@@ -6012,7 +6023,7 @@ td:last-child {
 .product-picker-head,
 .product-picker-list button {
   display: grid;
-  grid-template-columns: minmax(180px, 1.7fr) minmax(80px, .75fr) minmax(80px, .75fr) minmax(80px, .75fr) minmax(50px, .42fr) minmax(68px, .62fr) minmax(130px, 1.1fr) minmax(62px, .58fr) minmax(96px, .75fr);
+  grid-template-columns: minmax(80px, .75fr) minmax(80px, .75fr) minmax(80px, .75fr) minmax(50px, .42fr) minmax(68px, .62fr) minmax(180px, 1.7fr) minmax(62px, .58fr) minmax(96px, .75fr);
   gap: 10px;
   align-items: center;
 }
@@ -6031,7 +6042,7 @@ td:last-child {
   overflow-y: auto;
 }
 .product-picker .catalog-list button {
-  grid-template-columns: minmax(180px, 1.7fr) minmax(80px, .75fr) minmax(80px, .75fr) minmax(80px, .75fr) minmax(50px, .42fr) minmax(68px, .62fr) minmax(130px, 1.1fr) minmax(62px, .58fr) minmax(96px, .75fr);
+  grid-template-columns: minmax(80px, .75fr) minmax(80px, .75fr) minmax(80px, .75fr) minmax(50px, .42fr) minmax(68px, .62fr) minmax(180px, 1.7fr) minmax(62px, .58fr) minmax(96px, .75fr);
   gap: 10px;
   padding: 12px 18px;
 }
