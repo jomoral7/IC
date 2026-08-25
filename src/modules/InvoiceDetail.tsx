@@ -55,6 +55,10 @@ export function InvoiceDetailModal({
 
   const total = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const viewTotal = items.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const itemDiscountTotal = items.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.original_price ?? item.unit_price) - item.unit_price) * item.qty,
+    0,
+  );
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -177,21 +181,28 @@ export function InvoiceDetailModal({
               ))}
               {(() => {
                 const subtotal = Number(doc.subtotal ?? viewTotal);
-                const discount = Number(doc.discount ?? 0);
+                const ticketDiscount = Number(doc.discount ?? 0);
+                const discount = itemDiscountTotal + ticketDiscount;
+                const grossSale = subtotal + itemDiscountTotal;
+                const netSale = subtotal - ticketDiscount;
                 const tax = Number(doc.tax ?? 0);
                 const docTotal = Number(doc.total ?? subtotal);
                 return (
                   <>
                     <div className="invoice-brk-row">
-                      <span>Subtotal</span>
-                      <span>{lps(subtotal)}</span>
+                      <span>Venta bruta</span>
+                      <span>{lps(grossSale)}</span>
                     </div>
                     {discount > 0 && (
-                      <div className="invoice-brk-row muted">
-                        <span>Descuento</span>
+                      <div className="invoice-brk-row discount-total">
+                        <span>Descuento total aplicado</span>
                         <span>- {lps(discount)}</span>
                       </div>
                     )}
+                    <div className="invoice-brk-row net-sale">
+                      <span>Venta neta</span>
+                      <strong>{lps(netSale)}</strong>
+                    </div>
                     {tax > 0 && (
                       <div className="invoice-brk-row muted">
                         <span>ISV (15%)</span>

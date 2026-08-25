@@ -1,6 +1,6 @@
 import { FileText, Search } from "lucide-react";
 import { useState } from "react";
-import type { BonusPayment, Commission, SellerGoal } from "../types";
+import type { BonusPayment, Commission, Seller, SellerGoal } from "../types";
 import { lps, shortDate } from "../lib/format";
 import { EmptyWork } from "../ui";
 
@@ -29,12 +29,18 @@ export function MySales({
   goals,
   bonusPayments,
   onOpenInvoice,
+  sellerOptions,
+  selectedSellerId,
+  onSelectSeller,
 }: {
   sellerName: string | null;
   commissions: Commission[];
   goals: SellerGoal[];
   bonusPayments: BonusPayment[];
   onOpenInvoice: (documentId: string) => void;
+  sellerOptions?: Seller[];
+  selectedSellerId?: string;
+  onSelectSeller?: (sellerId: string) => void;
 }) {
   const [tab, setTab] = useState<"pending" | "hold" | "paid">("pending");
 
@@ -79,8 +85,18 @@ export function MySales({
       <div className="panel-heading">
         <div>
           <p className="section-label">Mi cuenta</p>
-          <h2>Mis ventas · {sellerName}</h2>
+          <h2>{sellerOptions ? "Ventas por vendedor" : "Mis ventas"} · {sellerName}</h2>
         </div>
+        {sellerOptions && onSelectSeller && (
+          <label className="seller-view-select">
+            <span>Vendedor</span>
+            <select value={selectedSellerId} onChange={(event) => onSelectSeller(event.target.value)}>
+              {sellerOptions.map((seller) => (
+                <option key={seller.id} value={seller.id}>{seller.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="acc-summary my-sales-summary">

@@ -72,6 +72,7 @@ export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedModule, setSelectedModule] = useState<ModuleName>("Dashboard");
+  const [viewedSellerId, setViewedSellerId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Party[]>([]);
@@ -1242,21 +1243,35 @@ export function App() {
       y += variant ? 34 : 24;
     });
 
-    // Desglose (subtotal neto / descuento manual / ISV). La oferta ya se ve tachada en la linea.
-    if (amounts && (amounts.discount > 0 || amounts.tax > 0)) {
+    // Desglose completo: precio original menos todos los descuentos = venta neta.
+    if (amounts) {
+      const itemDiscount = lines.reduce(
+        (sum, line) => sum + Math.max(0, Number(line.original_price ?? line.sale_price) - line.sale_price) * line.qty,
+        0,
+      );
+      const totalDiscount = itemDiscount + amounts.discount;
+      const grossSale = amounts.subtotal + itemDiscount;
+      const netSale = amounts.subtotal - amounts.discount;
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       pdf.setTextColor("#667782");
       y += 8;
-      pdf.text("Subtotal", 360, y);
-      pdf.text(`L ${amounts.subtotal.toLocaleString("es-HN")}`, 482, y);
-      if (amounts.discount > 0) {
+      pdf.text("Venta bruta", 360, y);
+      pdf.text(`L ${grossSale.toLocaleString("es-HN")}`, 482, y);
+      if (totalDiscount > 0) {
         y += 16;
         pdf.setTextColor("#b4231f");
-        pdf.text("Descuento", 360, y);
-        pdf.text(`- L ${amounts.discount.toLocaleString("es-HN")}`, 482, y);
+        pdf.text("Descuento total", 360, y);
+        pdf.text(`- L ${totalDiscount.toLocaleString("es-HN")}`, 482, y);
         pdf.setTextColor("#667782");
       }
+      y += 16;
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor("#1f7a4d");
+      pdf.text("Venta neta", 360, y);
+      pdf.text(`L ${netSale.toLocaleString("es-HN")}`, 482, y);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor("#667782");
       if (amounts.tax > 0) {
         y += 16;
         pdf.text("ISV (15%)", 360, y);
@@ -1773,14 +1788,21 @@ export function App() {
         {selectedModule === "Mis ventas" &&
           (() => {
             const mySeller = sellers.find((s) => s.user_id === session?.user?.id) ?? null;
-            const mine = mySeller ? commissions.filter((c) => c.seller_id === mySeller.id) : [];
+            const canViewAllSellers = currentRole === "admin" || currentRole === "manager";
+            const viewedSeller = canViewAllSellers
+              ? sellers.find((seller) => seller.id === viewedSellerId) ?? sellers[0] ?? null
+              : mySeller;
+            const mine = viewedSeller ? commissions.filter((c) => c.seller_id === viewedSeller.id) : [];
             return (
               <MySales
-                sellerName={mySeller?.name ?? null}
+                sellerName={viewedSeller?.name ?? null}
                 commissions={mine}
-                goals={mySeller ? goals.filter((g) => g.seller_id === mySeller.id && g.active) : []}
-                bonusPayments={mySeller ? bonusPayments.filter((b) => b.seller_id === mySeller.id) : []}
+                goals={viewedSeller ? goals.filter((g) => g.seller_id === viewedSeller.id && g.active) : []}
+                bonusPayments={viewedSeller ? bonusPayments.filter((b) => b.seller_id === viewedSeller.id) : []}
                 onOpenInvoice={(id) => void openInvoiceById(id)}
+                sellerOptions={canViewAllSellers ? sellers : undefined}
+                selectedSellerId={viewedSeller?.id}
+                onSelectSeller={canViewAllSellers ? setViewedSellerId : undefined}
               />
             );
           })()}
