@@ -228,7 +228,7 @@ function CreateDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer user-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Nuevo acceso</p>
@@ -238,6 +238,7 @@ function CreateDrawer({
             <X size={18} />
           </button>
         </div>
+        <div className="user-drawer-body">
         <div className="form-grid one">
           <label>
             Nombre
@@ -267,9 +268,12 @@ function CreateDrawer({
             </p>
           )}
         </div>
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
-          <Save size={18} /> {saving ? "Creando..." : "Crear usuario"}
-        </button>
+        </div>
+        <div className="drawer-footer user-drawer-footer">
+          <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+            <Save size={18} /> {saving ? "Creando..." : "Crear usuario"}
+          </button>
+        </div>
       </aside>
     </div>
   );
@@ -298,7 +302,7 @@ function EditDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer user-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Editar usuario</p>
@@ -308,6 +312,7 @@ function EditDrawer({
             <X size={18} />
           </button>
         </div>
+        <div className="user-drawer-body">
         <div className="form-grid one">
           <label>
             Nombre
@@ -327,9 +332,12 @@ function EditDrawer({
             <span>Usuario activo</span>
           </label>
         </div>
-        <button className="primary-button wide" disabled={saving} onClick={() => void submit()}>
-          <Save size={18} /> {saving ? "Guardando..." : "Guardar cambios"}
-        </button>
+        </div>
+        <div className="drawer-footer user-drawer-footer">
+          <button className="primary-button wide" disabled={saving} onClick={() => void submit()}>
+            <Save size={18} /> {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
       </aside>
     </div>
   );
@@ -358,21 +366,25 @@ function ResetModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="qr-modal adjustment-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="qr-modal adjustment-modal user-reset-modal" onClick={(e) => e.stopPropagation()}>
         <button className="icon-button modal-close" onClick={onClose}>
           <X size={18} />
         </button>
         <p className="section-label">Resetear contrasena</p>
         <h2>{user.full_name || user.username}</h2>
+        <div className="user-reset-body">
         <div className="form-grid one">
           <label>
             Nueva contrasena
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimo 6 caracteres" />
           </label>
         </div>
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
-          <KeyRound size={18} /> {saving ? "Aplicando..." : "Cambiar contrasena"}
-        </button>
+        </div>
+        <div className="user-reset-footer">
+          <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+            <KeyRound size={18} /> {saving ? "Aplicando..." : "Cambiar contrasena"}
+          </button>
+        </div>
       </div>
     </div>
   );
