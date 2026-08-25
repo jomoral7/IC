@@ -33,7 +33,15 @@ export type Commission = {
   commission_amount: number;
   status: string; // pending | hold | paid | cancelled
   created_at: string;
-  doc: { document_number: string; customer_name: string | null; total: number; created_at: string } | null;
+  doc: {
+    document_number: string;
+    customer_name: string | null;
+    subtotal: number;
+    discount: number;
+    total: number;
+    created_at: string;
+    items: Array<{ discount: number }>;
+  } | null;
 };
 
 export type BonusPayment = {

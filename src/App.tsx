@@ -156,7 +156,7 @@ export function App() {
         supabase.from("stock_requests").select("id, product_id, requested_quantity, status, supplier_id, created_at"),
         supabase
           .from("seller_commissions")
-          .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, total, created_at)")
+          .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, subtotal, discount, total, created_at, document_items(discount))")
           .order("created_at", { ascending: false }),
         supabase.from("seller_goals").select("*").order("min_sales"),
         supabase.from("seller_bonus_payments").select("id, seller_id, goal_id, period, bonus, status"),
@@ -228,8 +228,13 @@ export function App() {
           ? {
               document_number: c.documents.document_number,
               customer_name: c.documents.customer_name ?? null,
+              subtotal: Number(c.documents.subtotal ?? c.base_amount),
+              discount: Number(c.documents.discount ?? 0),
               total: Number(c.documents.total),
               created_at: c.documents.created_at,
+              items: (c.documents.document_items ?? []).map((item: any) => ({
+                discount: Number(item.discount ?? 0),
+              })),
             }
           : null,
       })) as Commission[],

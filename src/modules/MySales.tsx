@@ -14,6 +14,15 @@ function sameMonth(iso: string): boolean {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
 }
 
+function saleDiscount(commission: Commission): number {
+  const itemDiscount = commission.doc?.items.reduce((sum, item) => sum + item.discount, 0) ?? 0;
+  return itemDiscount + Number(commission.doc?.discount ?? 0);
+}
+
+function grossSale(commission: Commission): number {
+  return commission.base_amount + saleDiscount(commission);
+}
+
 export function MySales({
   sellerName,
   commissions,
@@ -49,18 +58,19 @@ export function MySales({
   const totalPorPagar = porPagar.reduce((s, c) => s + c.commission_amount, 0);
   const totalPagadas = pagadas.reduce((s, c) => s + c.commission_amount, 0);
 
-  const monthSales = commissions
-    .filter((c) => c.status !== "cancelled" && sameMonth(c.created_at))
-    .reduce((s, c) => s + c.base_amount, 0);
+  const monthCommissions = commissions.filter((c) => c.status !== "cancelled" && sameMonth(c.created_at));
+  const monthNetSales = monthCommissions.reduce((sum, commission) => sum + commission.base_amount, 0);
+  const monthDiscounts = monthCommissions.reduce((sum, commission) => sum + saleDiscount(commission), 0);
+  const monthGrossSales = monthNetSales + monthDiscounts;
   const period = currentPeriod();
 
   const tiers = [...goals].sort((a, b) => a.min_sales - b.min_sales);
-  const reached = tiers.filter((g) => monthSales >= g.min_sales);
+  const reached = tiers.filter((g) => monthNetSales >= g.min_sales);
   const applicable = reached.length ? reached[reached.length - 1] : null;
   const paidThisMonth = bonusPayments.some((b) => b.period === period && b.status === "paid");
   const topMeta = tiers.length ? tiers[tiers.length - 1].min_sales : 0;
-  const pct = topMeta > 0 ? Math.min(100, Math.round((monthSales / topMeta) * 100)) : 0;
-  const nextTier = tiers.find((g) => monthSales < g.min_sales);
+  const pct = topMeta > 0 ? Math.min(100, Math.round((monthNetSales / topMeta) * 100)) : 0;
+  const nextTier = tiers.find((g) => monthNetSales < g.min_sales);
 
   const list = tab === "pending" ? porPagar : tab === "hold" ? enEspera : pagadas;
 
@@ -73,10 +83,25 @@ export function MySales({
         </div>
       </div>
 
-      <div className="acc-summary">
-        <div className="acc-card">
+      <div className="acc-summary my-sales-summary">
+        <div className="acc-card sales-equation-card">
           <span>Ventas del mes</span>
-          <strong>{lps(monthSales)}</strong>
+          <div className="sales-equation" aria-label={`Venta bruta ${lps(monthGrossSales)}, menos descuentos ${lps(monthDiscounts)}, igual a venta neta ${lps(monthNetSales)}`}>
+            <div>
+              <small>Venta bruta</small>
+              <strong>{lps(monthGrossSales)}</strong>
+            </div>
+            <b className="sales-equation-sign" aria-hidden="true">−</b>
+            <div className="sales-equation-discount">
+              <small>Descuentos</small>
+              <strong>{lps(monthDiscounts)}</strong>
+            </div>
+            <b className="sales-equation-sign" aria-hidden="true">=</b>
+            <div className="sales-equation-net">
+              <small>Venta neta</small>
+              <strong>{lps(monthNetSales)}</strong>
+            </div>
+          </div>
         </div>
         <div className="acc-card income">
           <span>Comision por pagar</span>
@@ -100,7 +125,7 @@ export function MySales({
             </div>
             <div className="tier-list">
               {tiers.map((g) => {
-                const hit = monthSales >= g.min_sales;
+                const hit = monthNetSales >= g.min_sales;
                 const isApplicable = applicable?.id === g.id;
                 return (
                   <div className={`tier-row ${hit ? "hit" : ""} ${isApplicable ? "applicable" : ""}`} key={g.id}>
@@ -121,7 +146,7 @@ export function MySales({
                 Aun no alcanzas el primer bono.{" "}
                 {nextTier && (
                   <>
-                    Te faltan <strong>{lps(nextTier.min_sales - monthSales)}</strong> para el bono de {lps(nextTier.bonus)}.
+                    Te faltan <strong>{lps(nextTier.min_sales - monthNetSales)}</strong> para el bono de {lps(nextTier.bonus)}.
                   </>
                 )}
               </p>
@@ -147,27 +172,38 @@ export function MySales({
         {list.length === 0 ? (
           <EmptyWork title="Nada aqui" text="No hay comisiones en este estado." />
         ) : (
-          list.map((c) => (
-            <div className="commission-row" key={c.id}>
-              <div className="commission-info">
-                <strong>#{c.doc?.document_number ?? "—"}</strong>
-                <span>
-                  {c.doc?.customer_name ?? "Cliente final"} · {shortDate(c.created_at)} · Venta {lps(c.base_amount)}
-                </span>
+          list.map((c) => {
+            const discount = saleDiscount(c);
+            return (
+              <div className="commission-row" key={c.id}>
+                <div className="commission-info">
+                  <strong>#{c.doc?.document_number ?? "—"}</strong>
+                  <span>{c.doc?.customer_name ?? "Cliente final"} · {shortDate(c.created_at)}</span>
+                  <div className="commission-sale-equation">
+                    <span>Venta {lps(grossSale(c))}</span>
+                    <b>−</b>
+                    <span className="is-discount">Descuento {lps(discount)}</span>
+                    <b>=</b>
+                    <strong>Venta neta {lps(c.base_amount)}</strong>
+                  </div>
+                </div>
+                <div className="commission-value">
+                  <span>Comisión</span>
+                  <b className="commission-amt">{lps(c.commission_amount)}</b>
+                </div>
+                <div className="commission-actions">
+                  <button className="mini-button" title="Ver detalle y comision" onClick={() => onOpenInvoice(c.document_id)}>
+                    <FileText size={14} /> Ver detalle
+                  </button>
+                  {c.status === "paid" && <span className="stock-badge ok">Pagada</span>}
+                </div>
               </div>
-              <b className="commission-amt">{lps(c.commission_amount)}</b>
-              <div className="commission-actions">
-                <button className="mini-button" title="Ver detalle y comision" onClick={() => onOpenInvoice(c.document_id)}>
-                  <FileText size={14} /> Ver detalle
-                </button>
-                {c.status === "paid" && <span className="stock-badge ok">Pagada</span>}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
       <p className="mini-note" style={{ marginTop: 10 }}>
-        <Search size={12} /> Aqui ves solo tus ventas y comisiones.
+        <Search size={12} /> La comision y el bono se calculan sobre la venta neta, despues de descuentos.
       </p>
     </section>
   );

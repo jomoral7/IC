@@ -3728,6 +3728,30 @@ td:last-child {
   font-size: 12px;
   color: var(--muted);
 }
+.commission-sale-equation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+.commission-sale-equation strong,
+.commission-sale-equation b {
+  display: inline;
+  font-size: 12px;
+}
+.commission-sale-equation strong {
+  color: #1f7a4d;
+}
+.commission-sale-equation b {
+  color: var(--muted);
+}
+.commission-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
 .commission-amt {
   color: var(--navy);
   font-variant-numeric: tabular-nums;
@@ -4117,6 +4141,44 @@ td:last-child {
 }
 .acc-card.expense strong {
   color: #b4231f;
+}
+.my-sales-summary {
+  grid-template-columns: minmax(440px, 1.8fr) repeat(2, minmax(170px, 1fr));
+}
+.sales-equation-card {
+  gap: 10px;
+}
+.sales-equation {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: end;
+  gap: 12px;
+}
+.sales-equation > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sales-equation small,
+.commission-value > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sales-equation .sales-equation-discount strong,
+.commission-sale-equation .is-discount {
+  color: #b4231f;
+}
+.sales-equation .sales-equation-net strong {
+  color: #1f7a4d;
+}
+.sales-equation-sign {
+  color: var(--muted);
+  font-size: 18px;
+  padding-bottom: 2px;
 }
 .tab-row {
   display: flex;
@@ -5454,6 +5516,10 @@ td:last-child {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .my-sales-summary .sales-equation-card {
+    grid-column: 1 / -1;
+  }
+
   .inv-stat,
   .acc-card,
   .dash-kpi,
@@ -5614,6 +5680,10 @@ td:last-child {
   .commission-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .commission-value {
+    align-items: flex-start;
   }
 
   .fin-line b,
