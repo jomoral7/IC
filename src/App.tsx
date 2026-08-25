@@ -1208,7 +1208,7 @@ export function App() {
     pdf.setTextColor("#667782");
     pdf.text("CANT", 56, 156 + contentOffset);
     pdf.text("DESCRIPCION", 96, 156 + contentOffset);
-    pdf.text("SUBTOTAL", 482, 156 + contentOffset);
+    pdf.text("IMPORTE ORIGINAL", 436, 156 + contentOffset);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     let y = 182 + contentOffset;
@@ -1219,7 +1219,6 @@ export function App() {
         .filter(Boolean)
         .join(" · ");
       pdf.text(line.name, 96, y);
-      const hasOffer = line.original_price != null && line.original_price > line.sale_price;
       const lineDiscount = Number(
         line.discount ?? Math.max(0, Number(line.original_price ?? line.sale_price) - line.sale_price) * line.qty,
       );
@@ -1230,27 +1229,15 @@ export function App() {
         pdf.setFontSize(10);
         pdf.setTextColor("#0B2533");
       }
-      if (hasOffer) {
-        // Precio original tachado + precio con oferta
-        pdf.setFontSize(8);
-        pdf.setTextColor("#98A2AC");
-        const origText = `L ${(line.qty * (line.original_price as number)).toLocaleString("es-HN")}`;
-        const ow = pdf.getTextWidth(origText);
-        pdf.text(origText, 482, y - 10);
-        pdf.setDrawColor("#98A2AC");
-        pdf.line(482, y - 12, 482 + ow, y - 12);
-        pdf.setFontSize(10);
-        pdf.setTextColor("#0B2533");
-      }
-      pdf.text(`L ${(line.qty * line.sale_price).toLocaleString("es-HN")}`, 482, y);
+      const originalTotal = line.qty * Number(line.original_price ?? line.sale_price);
+      pdf.text(`L ${originalTotal.toLocaleString("es-HN")}`, 482, y);
       if (lineDiscount > 0) {
         const unitDiscount = line.qty > 0 ? lineDiscount / line.qty : 0;
-        const originalTotal = line.qty * Number(line.original_price ?? line.sale_price);
         const detailY = y + (variant ? 24 : 13);
         pdf.setFontSize(8);
         pdf.setTextColor("#b4231f");
         pdf.text(
-          `Antes L ${originalTotal.toLocaleString("es-HN")}  |  Descuento - L ${lineDiscount.toLocaleString("es-HN")}${line.qty > 1 ? ` (L ${unitDiscount.toLocaleString("es-HN")} c/u)` : ""}`,
+          `Descuento - L ${lineDiscount.toLocaleString("es-HN")}${line.qty > 1 ? ` (L ${unitDiscount.toLocaleString("es-HN")} c/u)` : ""}`,
           96,
           detailY,
         );
