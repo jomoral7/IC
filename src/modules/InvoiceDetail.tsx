@@ -221,10 +221,12 @@ export function InvoiceDetailModal({
                         <span>- {lps(discount)}</span>
                       </div>
                     )}
-                    <div className="invoice-brk-row net-sale">
-                      <span>Subtotal neto</span>
-                      <strong>{lps(netSale)}</strong>
-                    </div>
+                    {tax > 0 && (
+                      <div className="invoice-brk-row net-sale">
+                        <span>Subtotal neto</span>
+                        <strong>{lps(netSale)}</strong>
+                      </div>
+                    )}
                     {tax > 0 && (
                       <div className="invoice-brk-row muted">
                         <span>ISV (15%)</span>
