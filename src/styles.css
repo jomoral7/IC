@@ -1339,6 +1339,12 @@ td:last-child {
   width: min(480px, 100%);
 }
 
+.seller-drawer {
+  width: min(620px, 100%);
+  padding-bottom: 24px;
+  overscroll-behavior: contain;
+}
+
 .split-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3784,7 +3790,7 @@ td:last-child {
 .goals-editor {
   margin-top: 20px;
   border-top: 1px solid var(--line);
-  padding-top: 16px;
+  padding: 16px 0 4px;
 }
 .goals-editor h3 {
   font-size: 14px;
@@ -3812,21 +3818,46 @@ td:last-child {
 }
 .goal-add {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
-  gap: 8px;
-  margin-top: 6px;
+  grid-template-columns: 1.15fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+.goal-add label {
+  min-width: 0;
+  gap: 5px;
+}
+.goal-add label > span {
+  min-height: 26px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: .05em;
+  text-transform: uppercase;
 }
 .goal-add input {
+  width: 100%;
+  height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 13px;
   min-width: 0;
 }
+.goal-add > button {
+  grid-column: 1 / -1;
+  min-height: 42px;
+  justify-content: center;
+}
 @media (max-width: 560px) {
   .goal-add {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
+  .goal-add > button { grid-column: 1; }
 }
 
 /* Rangos de bono */

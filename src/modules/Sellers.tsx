@@ -367,7 +367,7 @@ function SellerDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer seller-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">{seller ? "Editar vendedor" : "Nuevo vendedor"}</p>
@@ -438,9 +438,18 @@ function SellerDrawer({
               </div>
             ))}
             <div className="goal-add">
-              <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Etiqueta (opcional)" />
-              <input type="number" min={0} value={goalMin} onChange={(e) => setGoalMin(Number(e.target.value))} placeholder="Meta ventas" />
-              <input type="number" min={0} value={goalBonus} onChange={(e) => setGoalBonus(Number(e.target.value))} placeholder="Bono" />
+              <label>
+                <span>Etiqueta opcional</span>
+                <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Ej. Bono nivel 1" />
+              </label>
+              <label>
+                <span>Ventas mínimas (L)</span>
+                <input type="number" min={0} value={goalMin || ""} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setGoalMin(Number(e.target.value))} placeholder="Ej. 20,000" />
+              </label>
+              <label>
+                <span>Bono a pagar (L)</span>
+                <input type="number" min={0} value={goalBonus || ""} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setGoalBonus(Number(e.target.value))} placeholder="Ej. 1,000" />
+              </label>
               <button className="secondary-button" disabled={goalMin <= 0 || goalBonus <= 0} onClick={() => void addGoal()}>
                 <Plus size={15} /> Agregar
               </button>
