@@ -196,32 +196,33 @@ export function InvoiceDetailModal({
                 const netSale = subtotal - ticketDiscount;
                 const tax = Number(doc.tax ?? 0);
                 const docTotal = Number(doc.total ?? subtotal);
+                const hasMixedDiscounts = itemDiscountTotal > 0 && ticketDiscount > 0;
                 return (
                   <>
                     <div className="invoice-brk-row">
-                      <span>Venta bruta</span>
+                      <span>Subtotal</span>
                       <span>{lps(grossSale)}</span>
                     </div>
                     {itemDiscountTotal > 0 && (
                       <div className="invoice-brk-row discount-detail">
-                        <span>Descuentos aplicados a prendas</span>
+                        <span>{hasMixedDiscounts ? "Descuento en prendas" : "Descuento aplicado"}</span>
                         <span>- {lps(itemDiscountTotal)}</span>
                       </div>
                     )}
                     {ticketDiscount > 0 && (
                       <div className="invoice-brk-row discount-detail">
-                        <span>Descuento general del ticket</span>
+                        <span>{hasMixedDiscounts ? "Descuento general del ticket" : "Descuento aplicado"}</span>
                         <span>- {lps(ticketDiscount)}</span>
                       </div>
                     )}
-                    {discount > 0 && (
+                    {hasMixedDiscounts && discount > 0 && (
                       <div className="invoice-brk-row discount-total">
-                        <span>Descuento total aplicado</span>
+                        <span>Descuento total</span>
                         <span>- {lps(discount)}</span>
                       </div>
                     )}
                     <div className="invoice-brk-row net-sale">
-                      <span>Venta neta</span>
+                      <span>Subtotal neto</span>
                       <strong>{lps(netSale)}</strong>
                     </div>
                     {tax > 0 && (
@@ -231,7 +232,7 @@ export function InvoiceDetailModal({
                       </div>
                     )}
                     <div className="invoice-total-row">
-                      <span>Total facturado</span>
+                      <span>Total</span>
                       <strong>{lps(docTotal)}</strong>
                     </div>
                   </>
