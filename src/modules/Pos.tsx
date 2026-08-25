@@ -554,14 +554,14 @@ export function POS({
             </div>
             {scanMessage && <div className="pos-scan-feedback"><span>{scanMessage}</span><button onClick={() => setScanMessage("")}>Cerrar</button></div>}
             <div className="product-picker-head">
-              <span>Producto</span><span>Departamento</span><span>Categoría</span><span>Marca</span><span>Talla</span><span>Color</span><span>Stock</span><span>Precio</span>
+              <span>Producto</span><span>Departamento</span><span>Categoría</span><span>Marca</span><span>Talla</span><span>Color</span><span>Descripción</span><span>Stock</span><span>Precio</span>
             </div>
             {shown.length === 0 ? <EmptyWork title="Sin productos" text="Prueba con otro dato de búsqueda." /> : (
               <div className="catalog-list product-picker-list">
                 {shown.map((product) => (
                   <button key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}>
                     <div><strong>{product.name}</strong><span className="catalog-code">{product.internal_code ?? product.sku}</span></div>
-                    <span>{product.gender || "—"}</span><span>{product.category || "—"}</span><span>{product.brand || "—"}</span><span>{product.size || "—"}</span><span>{product.color || "—"}</span>
+                    <span>{product.gender || "—"}</span><span>{product.category || "—"}</span><span>{product.brand || "—"}</span><span>{product.size || "—"}</span><span>{product.color || "—"}</span><span title={product.description || "Sin descripción"}>{product.description || "—"}</span>
                     <em className={stockState(product.stock, product.min_stock) !== "ok" ? "stock-alert" : ""}>{product.stock} disp.</em>
                     {product.discount_pct > 0 ? <b className="pos-price-offer"><span className="pos-price-old">{lps(product.sale_price)}</span>{lps(product.price_final)} <span className="pos-offer-tag">-{product.discount_pct}%</span></b> : <b>{lps(product.sale_price)}</b>}
                   </button>

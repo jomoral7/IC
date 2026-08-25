@@ -1138,7 +1138,7 @@ export function App() {
     writeFile(workbook, "inversiones-del-caribe.xlsx");
   }
 
-  type InvoiceLine = { qty: number; name: string; size: string | null; category: string | null; brand: string | null; color: string | null; sale_price: number; original_price?: number };
+  type InvoiceLine = { qty: number; name: string; size: string | null; category: string | null; brand: string | null; color: string | null; sale_price: number; original_price?: number; discount?: number };
 
   async function buildInvoicePdf(
     number: string,
@@ -1220,6 +1220,9 @@ export function App() {
         .join(" · ");
       pdf.text(line.name, 96, y);
       const hasOffer = line.original_price != null && line.original_price > line.sale_price;
+      const lineDiscount = Number(
+        line.discount ?? Math.max(0, Number(line.original_price ?? line.sale_price) - line.sale_price) * line.qty,
+      );
       if (variant) {
         pdf.setFontSize(8);
         pdf.setTextColor("#667782");
@@ -1240,15 +1243,28 @@ export function App() {
         pdf.setTextColor("#0B2533");
       }
       pdf.text(`L ${(line.qty * line.sale_price).toLocaleString("es-HN")}`, 482, y);
-      y += variant ? 34 : 24;
+      if (lineDiscount > 0) {
+        const unitDiscount = line.qty > 0 ? lineDiscount / line.qty : 0;
+        const originalTotal = line.qty * Number(line.original_price ?? line.sale_price);
+        const detailY = y + (variant ? 24 : 13);
+        pdf.setFontSize(8);
+        pdf.setTextColor("#b4231f");
+        pdf.text(
+          `Antes L ${originalTotal.toLocaleString("es-HN")}  |  Descuento - L ${lineDiscount.toLocaleString("es-HN")}${line.qty > 1 ? ` (L ${unitDiscount.toLocaleString("es-HN")} c/u)` : ""}`,
+          96,
+          detailY,
+        );
+        pdf.setFontSize(10);
+      }
+      y += lineDiscount > 0 ? (variant ? 46 : 36) : variant ? 34 : 24;
     });
 
     // Desglose completo: precio original menos todos los descuentos = venta neta.
     if (amounts) {
-      const itemDiscount = lines.reduce(
-        (sum, line) => sum + Math.max(0, Number(line.original_price ?? line.sale_price) - line.sale_price) * line.qty,
-        0,
-      );
+      const itemDiscount = lines.reduce((sum, line) => {
+        const calculated = Math.max(0, Number(line.original_price ?? line.sale_price) - line.sale_price) * line.qty;
+        return sum + Number(line.discount ?? calculated);
+      }, 0);
       const totalDiscount = itemDiscount + amounts.discount;
       const grossSale = amounts.subtotal + itemDiscount;
       const netSale = amounts.subtotal - amounts.discount;
@@ -1261,8 +1277,20 @@ export function App() {
       if (totalDiscount > 0) {
         y += 16;
         pdf.setTextColor("#b4231f");
+        if (itemDiscount > 0) {
+          pdf.text("Desc. en prendas", 360, y);
+          pdf.text(`- L ${itemDiscount.toLocaleString("es-HN")}`, 482, y);
+        }
+        if (amounts.discount > 0) {
+          y += itemDiscount > 0 ? 16 : 0;
+          pdf.text("Desc. general", 360, y);
+          pdf.text(`- L ${amounts.discount.toLocaleString("es-HN")}`, 482, y);
+        }
+        y += 16;
+        pdf.setFont("helvetica", "bold");
         pdf.text("Descuento total", 360, y);
         pdf.text(`- L ${totalDiscount.toLocaleString("es-HN")}`, 482, y);
+        pdf.setFont("helvetica", "normal");
         pdf.setTextColor("#667782");
       }
       y += 16;
@@ -1325,7 +1353,7 @@ export function App() {
     if (!supabase) return;
     const { data: items, error } = await supabase
       .from("document_items")
-      .select("quantity, unit_price, unit_price_original, products(name, size, category, brand, color)")
+      .select("quantity, unit_price, unit_price_original, discount, products(name, size, category, brand, color)")
       .eq("document_id", doc.id);
     if (error) {
       setNotice(error.message);
@@ -1340,6 +1368,7 @@ export function App() {
       color: it.products?.color ?? null,
       sale_price: Number(it.unit_price),
       original_price: it.unit_price_original != null ? Number(it.unit_price_original) : undefined,
+      discount: it.discount != null ? Number(it.discount) : undefined,
     }));
     const customer = doc.customer_name ?? undefined;
     const dateStr = new Date(doc.created_at).toLocaleDateString("es-HN");
@@ -1389,7 +1418,7 @@ export function App() {
     if (!supabase) return;
     const { data: rows, error } = await supabase
       .from("document_items")
-      .select("product_id, quantity, unit_price, unit_price_original, products(name, size, internal_code, sku, category, brand, color)")
+      .select("product_id, quantity, unit_price, unit_price_original, discount, products(name, size, internal_code, sku, category, brand, color)")
       .eq("document_id", doc.id);
     if (error) {
       setNotice(error.message);
@@ -1406,6 +1435,7 @@ export function App() {
       qty: Number(it.quantity),
       unit_price: Number(it.unit_price),
       original_price: it.unit_price_original != null ? Number(it.unit_price_original) : undefined,
+      discount: it.discount != null ? Number(it.discount) : undefined,
       stock: products.find((p) => p.id === it.product_id)?.stock ?? 0,
     }));
     const { data: comm } = await supabase

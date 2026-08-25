@@ -15,11 +15,17 @@ export type InvoiceItem = {
   qty: number;
   unit_price: number;
   original_price?: number; // precio antes del descuento por oferta
+  discount?: number; // descuento total guardado para esta linea
   stock: number; // stock actual disponible del producto
 };
 
 function variantText(it: { category: string | null; brand: string | null; size: string | null; color: string | null }): string {
   return [it.category, it.brand, it.size ? `Talla ${it.size}` : null, it.color].filter(Boolean).join(" · ");
+}
+
+function itemDiscount(item: InvoiceItem): number {
+  const calculated = Math.max(0, Number(item.original_price ?? item.unit_price) - item.unit_price) * item.qty;
+  return Number(item.discount ?? calculated);
 }
 
 type Mode = "view" | "edit" | "void";
@@ -55,10 +61,7 @@ export function InvoiceDetailModal({
 
   const total = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const viewTotal = items.reduce((s, l) => s + l.qty * l.unit_price, 0);
-  const itemDiscountTotal = items.reduce(
-    (sum, item) => sum + Math.max(0, Number(item.original_price ?? item.unit_price) - item.unit_price) * item.qty,
-    0,
-  );
+  const itemDiscountTotal = items.reduce((sum, item) => sum + itemDiscount(item), 0);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -163,22 +166,30 @@ export function InvoiceDetailModal({
                 <span className="center">Cant.</span>
                 <span className="right">Subtotal</span>
               </div>
-              {items.map((it) => (
-                <div className="invoice-item-row" key={it.product_id}>
-                  <div>
-                    <strong>{it.name}</strong>
-                    {variantText(it) && <span className="inv-variant-line">{variantText(it)}</span>}
-                    <span className="inv-code">{it.code ?? "N/A"}</span>
-                    {it.original_price != null && it.original_price > it.unit_price && (
-                      <span className="ticket-offer">
-                        Oferta · antes <s>{lps(it.original_price)}</s> → {lps(it.unit_price)}
-                      </span>
-                    )}
+              {items.map((it) => {
+                const discount = itemDiscount(it);
+                const originalTotal = it.qty * Number(it.original_price ?? it.unit_price);
+                const unitDiscount = it.qty > 0 ? discount / it.qty : 0;
+                return (
+                  <div className="invoice-item-row" key={it.product_id}>
+                    <div>
+                      <strong>{it.name}</strong>
+                      {variantText(it) && <span className="inv-variant-line">{variantText(it)}</span>}
+                      <span className="inv-code">{it.code ?? "N/A"}</span>
+                      {discount > 0 && (
+                        <span className="invoice-line-discount">
+                          <span>Antes <s>{lps(originalTotal)}</s></span>
+                          <b>Descuento - {lps(discount)}</b>
+                          {it.qty > 1 && <small>({lps(unitDiscount)} por prenda)</small>}
+                          <span>Final {lps(it.qty * it.unit_price)}</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="center">{it.qty}</div>
+                    <div className="right">{lps(it.qty * it.unit_price)}</div>
                   </div>
-                  <div className="center">{it.qty}</div>
-                  <div className="right">{lps(it.qty * it.unit_price)}</div>
-                </div>
-              ))}
+                );
+              })}
               {(() => {
                 const subtotal = Number(doc.subtotal ?? viewTotal);
                 const ticketDiscount = Number(doc.discount ?? 0);
@@ -193,6 +204,18 @@ export function InvoiceDetailModal({
                       <span>Venta bruta</span>
                       <span>{lps(grossSale)}</span>
                     </div>
+                    {itemDiscountTotal > 0 && (
+                      <div className="invoice-brk-row discount-detail">
+                        <span>Descuentos aplicados a prendas</span>
+                        <span>- {lps(itemDiscountTotal)}</span>
+                      </div>
+                    )}
+                    {ticketDiscount > 0 && (
+                      <div className="invoice-brk-row discount-detail">
+                        <span>Descuento general del ticket</span>
+                        <span>- {lps(ticketDiscount)}</span>
+                      </div>
+                    )}
                     {discount > 0 && (
                       <div className="invoice-brk-row discount-total">
                         <span>Descuento total aplicado</span>

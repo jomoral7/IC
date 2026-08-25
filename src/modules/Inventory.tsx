@@ -439,12 +439,13 @@ export function Inventory({
             <table className="inv-table">
               <thead>
                 <tr>
-                  <th>Descripción</th>
+                  <th>Producto</th>
                   <th>Departamento</th>
                   <th>Categoria</th>
                   <th>Marca</th>
                   <th>Talla</th>
                   <th>Color</th>
+                  <th>Descripción</th>
                   <th className="num">Cantidad</th>
                   <th className="num">Costo</th>
                   <th className="num">Venta</th>
@@ -578,6 +579,8 @@ function GroupRow({
   const minP = Math.min(...prices);
   const maxP = Math.max(...prices);
   const priceText = minP === maxP ? lps(minP) : `${lps(minP)} – ${lps(maxP)}`;
+  const descriptions = [...new Set(group.items.map((product) => product.description?.trim()).filter(Boolean))];
+  const descriptionText = descriptions.length === 0 ? "—" : descriptions.length === 1 ? descriptions[0] : "Varios detalles";
   return (
     <tr className="group-row" onClick={onToggle}>
       <td>
@@ -593,6 +596,7 @@ function GroupRow({
       <td>{group.brand || "Sin marca"}</td>
       <td className="muted">Variantes</td>
       <td className="muted">—</td>
+      <td className="inv-description-cell">{descriptionText}</td>
       <td className={`num ${state !== "ok" ? "stock-alert" : ""}`}>
         <strong>{totalStock}</strong>
         {incoming > 0 && <span className="incoming-tag">+{incoming} en camino</span>}
@@ -636,7 +640,7 @@ function ProductRow({
     <tr className={indent ? "variant-child" : ""}>
       <td>
         <strong className={indent ? "child-name" : ""}>{product.name}</strong>
-        <span className="inv-code">{product.description || product.internal_code || product.sku}</span>
+        <span className="inv-code">{product.internal_code || product.sku}</span>
       </td>
       <td>{product.gender || "Sin departamento"}</td>
       <td>
@@ -651,6 +655,7 @@ function ProductRow({
           "—"
         )}
       </td>
+      <td className="inv-description-cell">{product.description || "—"}</td>
       <td className={`num ${state !== "ok" ? "stock-alert" : ""}`}>
         <strong>{product.stock}</strong>
         {product.incoming > 0 && <span className="incoming-tag">+{product.incoming} en camino</span>}
