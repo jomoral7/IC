@@ -164,7 +164,7 @@ export function InvoiceDetailModal({
               <div className="invoice-items-head">
                 <span>Descripcion / codigo</span>
                 <span className="center">Cant.</span>
-                <span className="right">Subtotal</span>
+                <span className="right">Importe original</span>
               </div>
               {items.map((it) => {
                 const discount = itemDiscount(it);
@@ -178,15 +178,13 @@ export function InvoiceDetailModal({
                       <span className="inv-code">{it.code ?? "N/A"}</span>
                       {discount > 0 && (
                         <span className="invoice-line-discount">
-                          <span>Antes <s>{lps(originalTotal)}</s></span>
                           <b>Descuento - {lps(discount)}</b>
                           {it.qty > 1 && <small>({lps(unitDiscount)} por prenda)</small>}
-                          <span>Final {lps(it.qty * it.unit_price)}</span>
                         </span>
                       )}
                     </div>
                     <div className="center">{it.qty}</div>
-                    <div className="right">{lps(it.qty * it.unit_price)}</div>
+                    <div className="right">{lps(originalTotal)}</div>
                   </div>
                 );
               })}
