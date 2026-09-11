@@ -23,7 +23,7 @@ import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
 import { supabase } from "./lib/supabase";
-import type { Account, AccountType, BonusPayment, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
+import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
 import { BrandMark, LoginScreen, roleLabel } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
 import { POS, type POSInvoicePreview } from "./modules/Pos";
@@ -867,6 +867,21 @@ export function App() {
     return accounts.find((a) => a.system_key === key)?.id ?? null;
   }
 
+  /** Define la cuenta de activo correcta según el cobro registrado en la factura. */
+  async function saleAssetAccount(documentId: string, paymentTerms: "cash" | "credit"): Promise<string | null> {
+    if (paymentTerms !== "cash") return accountIdByKey("accounts_receivable");
+    if (!supabase) return accountIdByKey("cash");
+    const { data } = await supabase
+      .from("payments")
+      .select("method")
+      .eq("document_id", documentId)
+      .gt("amount", 0)
+      .order("paid_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.method && data.method !== "cash" ? accountIdByKey("bank") : accountIdByKey("cash");
+  }
+
   // Postea un asiento balanceado. lines: {account_id, debit, credit, description}
   async function postJournal(
     entryDate: string,
@@ -897,6 +912,7 @@ export function App() {
     customerName: string,
     sellerId: string | null,
     paymentTerms: "cash" | "credit",
+    collectionMethod: CashCollectionMethod,
     discountPct = 0,
     discountAmount = 0,
     applyTax = false,
@@ -968,7 +984,7 @@ export function App() {
       };}),
     );
     if (paymentTerms === "cash") {
-      await supabase.from("payments").insert({ document_id: document.id, amount: total, method: "cash" });
+      await supabase.from("payments").insert({ document_id: document.id, amount: total, method: collectionMethod });
     }
     for (const line of cart) {
       const nextQty = Math.max(0, line.stock - line.qty);
@@ -1003,11 +1019,13 @@ export function App() {
     }
 
     // Asiento contable de la venta (partida doble):
-    //   Debe: Caja (contado) o Cuentas por cobrar (credito) = total
+    //   Debe: Caja (efectivo), Banco (deposito/transferencia) o CxC (credito) = total
     //   Haber: Ventas = taxable ; ISV por pagar = tax
     //   Debe: Costo de venta = costo ; Haber: Inventario = costo
     const costTotal = cart.reduce((sum, line) => sum + line.qty * Number(line.real_cost ?? 0), 0);
-    const debitAsset = paymentTerms === "cash" ? accountIdByKey("cash") : accountIdByKey("accounts_receivable");
+    const debitAsset = paymentTerms === "cash"
+      ? (collectionMethod === "cash" ? accountIdByKey("cash") : accountIdByKey("bank"))
+      : accountIdByKey("accounts_receivable");
     const saleDate = new Date(document.created_at).toISOString().slice(0, 10);
     await postJournal(saleDate, `Venta ${document.document_number}`, "sale", document.id, [
       { account_id: debitAsset, debit: total, credit: 0, description: `Venta ${document.document_number}` },
@@ -1017,7 +1035,8 @@ export function App() {
       { account_id: accountIdByKey("inventory"), debit: 0, credit: costTotal, description: "Salida de inventario" },
     ]);
 
-    await logAudit("Venta", `Factura ${document.document_number} · L ${total.toLocaleString("es-HN")}`);
+    const paymentLabel = collectionMethod === "cash" ? "Efectivo" : collectionMethod === "bank_deposit" ? "Depósito bancario" : "Transferencia bancaria";
+    await logAudit("Venta", `Factura ${document.document_number} · L ${total.toLocaleString("es-HN")} · ${paymentTerms === "credit" ? "Crédito" : paymentLabel}`);
     setCart([]);
     setNotice(`Factura ${document.document_number} emitida`);
     await loadWorkspace();
@@ -1484,7 +1503,7 @@ export function App() {
       (s, it) => s + it.qty * Number(products.find((p) => p.id === it.product_id)?.real_cost ?? 0),
       0,
     );
-    const creditAsset = doc.payment_terms === "cash" ? accountIdByKey("cash") : accountIdByKey("accounts_receivable");
+    const creditAsset = await saleAssetAccount(doc.id, doc.payment_terms === "credit" ? "credit" : "cash");
     const voidDate = new Date().toISOString().slice(0, 10);
     await postJournal(voidDate, `Anulacion factura ${doc.document_number}`, "void", doc.id, [
       { account_id: creditAsset, debit: 0, credit: total, description: `Anula venta ${doc.document_number}` },
@@ -1573,7 +1592,7 @@ export function App() {
     const dCost = newCost - oldCost;
     const dbPos = (amt: number) => ({ debit: amt >= 0 ? amt : 0, credit: amt < 0 ? -amt : 0 }); // cuentas de saldo deudor
     const crPos = (amt: number) => ({ debit: amt < 0 ? -amt : 0, credit: amt >= 0 ? amt : 0 }); // cuentas de saldo acreedor
-    const editAsset = doc.payment_terms === "cash" ? accountIdByKey("cash") : accountIdByKey("accounts_receivable");
+    const editAsset = await saleAssetAccount(doc.id, doc.payment_terms === "credit" ? "credit" : "cash");
     await postJournal(new Date().toISOString().slice(0, 10), `Ajuste edicion factura ${doc.document_number}`, "sale", doc.id, [
       { account_id: editAsset, ...dbPos(dTotal), description: "Ajuste cobro" },
       { account_id: accountIdByKey("sales"), ...crPos(dTaxable), description: "Ajuste ventas" },

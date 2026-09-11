@@ -56,6 +56,9 @@ export type Location = { id: string; name: string };
 
 export type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 
+/** Medio real con el que se cobra una venta de contado. */
+export type CashCollectionMethod = "cash" | "bank_deposit" | "bank_transfer";
+
 export type Account = {
   id: string;
   code: string;

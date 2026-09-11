@@ -614,39 +614,44 @@ function CatalogView({
       />
       {open && (
         <div className="drawer-backdrop">
-          <aside className="drawer small-drawer">
+          <aside className="drawer small-drawer account-drawer" role="dialog" aria-modal="true" aria-labelledby="new-account-title">
             <div className="panel-heading">
               <div>
                 <p className="section-label">Catalogo</p>
-                <h2>Nueva cuenta</h2>
+                <h2 id="new-account-title">Nueva cuenta</h2>
               </div>
               <button className="icon-button" onClick={() => setOpen(false)}>
                 <X size={18} />
               </button>
             </div>
-            <div className="form-grid one">
-              <label>
-                Codigo
-                <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="Ej. 5210" />
-              </label>
-              <label>
-                Nombre
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ej. Papeleria" />
-              </label>
-              <label>
-                Tipo
-                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as AccountType })}>
-                  <option value="expense">Gasto</option>
-                  <option value="income">Ingreso</option>
-                  <option value="asset">Activo</option>
-                  <option value="liability">Pasivo</option>
-                  <option value="equity">Patrimonio</option>
-                </select>
-              </label>
+            <div className="account-drawer-body">
+              <p className="account-drawer-note">Crea una cuenta que pueda recibir movimientos desde la contabilidad.</p>
+              <div className="form-grid one">
+                <label>
+                  Codigo
+                  <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="Ej. 5210" />
+                </label>
+                <label>
+                  Nombre
+                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ej. Papeleria" />
+                </label>
+                <label>
+                  Tipo
+                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as AccountType })}>
+                    <option value="expense">Gasto</option>
+                    <option value="income">Ingreso</option>
+                    <option value="asset">Activo</option>
+                    <option value="liability">Pasivo</option>
+                    <option value="equity">Patrimonio</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <button className="primary-button wide" disabled={!form.code.trim() || !form.name.trim()} onClick={() => void submit()}>
-              <Save size={18} /> Crear cuenta
-            </button>
+            <footer className="drawer-footer account-drawer-footer">
+              <button className="primary-button wide" disabled={!form.code.trim() || !form.name.trim()} onClick={() => void submit()}>
+                <Save size={18} /> Crear cuenta
+              </button>
+            </footer>
           </aside>
         </div>
       )}

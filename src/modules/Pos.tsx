@@ -1,6 +1,6 @@
 import { BadgePercent, Banknote, Check, ChevronDown, CreditCard, Eye, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { CartLine, Party, Product, Seller } from "../types";
+import type { CartLine, CashCollectionMethod, Party, Product, Seller } from "../types";
 import { lps, stockState } from "../lib/format";
 import { EmptyWork } from "../ui";
 import { ScannerModal } from "./Scanner";
@@ -31,6 +31,12 @@ export type POSInvoicePreview = {
   total: number;
 };
 
+const COLLECTION_METHODS: Array<{ value: CashCollectionMethod; label: string; detail: string }> = [
+  { value: "cash", label: "Efectivo", detail: "Registra en Caja" },
+  { value: "bank_deposit", label: "Depósito", detail: "Registra en Banco" },
+  { value: "bank_transfer", label: "Transferencia", detail: "Registra en Banco" },
+];
+
 export function POS({
   products,
   cart,
@@ -57,6 +63,7 @@ export function POS({
     customerName: string,
     sellerId: string | null,
     terms: "cash" | "credit",
+    collectionMethod: CashCollectionMethod,
     discountPct: number,
     discountAmount: number,
     applyTax: boolean,
@@ -78,6 +85,7 @@ export function POS({
   const [customerName, setCustomerName] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [terms, setTerms] = useState<"cash" | "credit">("cash");
+  const [collectionMethod, setCollectionMethod] = useState<CashCollectionMethod>("cash");
   const [issuing, setIssuing] = useState(false);
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -202,7 +210,7 @@ export function POS({
   async function submit() {
     if (cart.length === 0 || issuing) return;
     setIssuing(true);
-    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, discountPct, discountAmount, applyTax);
+    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, collectionMethod, discountPct, discountAmount, applyTax);
     setIssuing(false);
     if (doc) {
       setLastSale(doc);
@@ -217,6 +225,7 @@ export function POS({
     setDiscountMode("percent");
     setApplyTax(false);
     setTerms("cash");
+    setCollectionMethod("cash");
     setCashReceived("");
   }
 
@@ -251,7 +260,7 @@ export function POS({
   const cashReceivedValue = Number(cashReceived || 0);
   const changeDue = Math.max(0, cashReceivedValue - grandTotal);
   const creditNeedsCustomer = terms === "credit" && !customerName.trim();
-  const cashIsShort = terms === "cash" && cashReceivedValue < grandTotal;
+  const cashIsShort = terms === "cash" && collectionMethod === "cash" && cashReceivedValue < grandTotal;
 
   return (
     <section className="pos-workspace">
@@ -595,16 +604,32 @@ export function POS({
             </div>
 
             {terms === "cash" ? (
-              <div className="checkout-cash-panel">
-                <label>
-                  <span>Monto recibido</span>
-                  <div className="money-input"><b>L</b><input autoFocus type="number" min={0} step="0.01" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} /></div>
-                </label>
-                <div className={`change-box ${cashIsShort ? "short" : ""}`}>
-                  <span>{cashIsShort ? "Falta por recibir" : "Cambio a entregar"}</span>
-                  <strong>{lps(cashIsShort ? grandTotal - cashReceivedValue : changeDue)}</strong>
+              <>
+                <div className="checkout-collection-methods" role="group" aria-label="Dónde se recibió el pago">
+                  {COLLECTION_METHODS.map((method) => (
+                    <button key={method.value} type="button" className={collectionMethod === method.value ? "active" : ""} onClick={() => setCollectionMethod(method.value)}>
+                      <strong>{method.label}</strong><small>{method.detail}</small>
+                    </button>
+                  ))}
                 </div>
-              </div>
+                {collectionMethod === "cash" ? (
+                  <div className="checkout-cash-panel">
+                    <label>
+                      <span>Monto recibido</span>
+                      <div className="money-input"><b>L</b><input autoFocus type="number" min={0} step="0.01" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} /></div>
+                    </label>
+                    <div className={`change-box ${cashIsShort ? "short" : ""}`}>
+                      <span>{cashIsShort ? "Falta por recibir" : "Cambio a entregar"}</span>
+                      <strong>{lps(cashIsShort ? grandTotal - cashReceivedValue : changeDue)}</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="checkout-bank-panel">
+                    <strong>{collectionMethod === "bank_deposit" ? "Depósito bancario" : "Transferencia bancaria"}</strong>
+                    <span>El total de esta venta se registrará directamente en la cuenta Banco.</span>
+                  </div>
+                )}
+              </>
             ) : (
               <div className={`checkout-credit-panel ${creditNeedsCustomer ? "needs-customer" : ""}`}>
                 <CreditCard size={20} />
