@@ -7,6 +7,7 @@ import { DataTable, EmptyWork } from "../ui";
 
 const SOURCE_LABEL: Record<string, string> = {
   sale: "Venta",
+  purchase: "Compra",
   void: "Anulacion",
   expense: "Gasto",
   income: "Ingreso",

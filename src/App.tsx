@@ -764,6 +764,11 @@ export function App() {
         .eq("product_id", line.product.id)
         .in("status", ["pending", "ordered"]);
     }
+    // La entrada fisica tambien debe aumentar el activo Inventario.
+    await postJournal(new Date(document.created_at).toISOString().slice(0, 10), `Compra ${document.document_number}`, "purchase", document.id, [
+      { account_id: accountIdByKey("inventory"), debit: subtotal, credit: 0, description: "Entrada de inventario" },
+      { account_id: accountIdByKey("cash"), debit: 0, credit: subtotal, description: "Pago compra" },
+    ]);
     setNotice(`Entrada ${document.document_number} registrada · +${lines.reduce((s, l) => s + l.qty, 0)} unidades`);
     await loadWorkspace();
   }
@@ -846,6 +851,11 @@ export function App() {
       notes: `Recibido pedido ${document.document_number}`,
     });
     await supabase.from("stock_requests").update({ status: "received", received_at: new Date().toISOString() }).eq("id", request.id);
+    // Una recepcion parcial tambien es una compra: inventario sube y Caja registra el pago.
+    await postJournal(new Date(document.created_at).toISOString().slice(0, 10), `Compra ${document.document_number}`, "purchase", document.id, [
+      { account_id: accountIdByKey("inventory"), debit: total, credit: 0, description: "Entrada de inventario" },
+      { account_id: accountIdByKey("cash"), debit: 0, credit: total, description: "Pago compra" },
+    ]);
     setNotice(`Recibido: +${arrivedQty} unidades`);
     await loadWorkspace();
   }
