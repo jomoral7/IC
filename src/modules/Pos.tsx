@@ -471,6 +471,28 @@ export function POS({
           </div>
         </section>
 
+        <section className="pos-packaging" aria-label="Materiales de empaque usados">
+          <div className="checkout-packaging-head">
+            <div><span>Control interno</span><strong>Materiales de empaque usados</strong></div>
+            <small>No modifica el total ni aparece en la factura.</small>
+          </div>
+          {packagingMaterials.length === 0 ? (
+            <p className="pos-packaging-empty">Aún no hay materiales registrados. Agrégalos desde el módulo Empaque para poder descontarlos en una venta.</p>
+          ) : (
+            <>
+              <div className="checkout-packaging-list">
+                {packagingMaterials.map((material) => (
+                  <label key={material.id} className="checkout-packaging-item">
+                    <div><strong>{material.name}</strong><span>{material.stock} {material.unit}{material.stock !== 1 ? "es" : ""} disp. · {lps(material.unit_cost)} c/u</span></div>
+                    <input type="number" min={0} max={material.stock} step="1" value={packagingQuantity(material.id)} onChange={(event) => setPackagingQuantity(material.id, Number(event.target.value))} aria-label={`Cantidad de ${material.name} usada`} />
+                  </label>
+                ))}
+              </div>
+              {packagingCost > 0 && <div className="checkout-packaging-cost"><span>Costo absorbido por la empresa</span><strong>{lps(packagingCost)}</strong></div>}
+            </>
+          )}
+        </section>
+
         <div className="pos-checkout-dock">
           <div className="sale-breakdown">
             <div className="brk-row">
@@ -662,21 +684,6 @@ export function POS({
               {tax > 0 && <div><span>ISV 15%</span><b>{lps(tax)}</b></div>}
               <div className="checkout-review-total"><span>Total</span><strong>{lps(grandTotal)}</strong></div>
             </div>
-
-            {packagingMaterials.length > 0 && (
-              <section className="checkout-packaging" aria-label="Materiales de empaque usados">
-                <div className="checkout-packaging-head"><div><span>Control interno</span><strong>Materiales de empaque usados</strong></div><small>No modifica el total ni aparece en la factura.</small></div>
-                <div className="checkout-packaging-list">
-                  {packagingMaterials.map((material) => (
-                    <label key={material.id} className="checkout-packaging-item">
-                      <div><strong>{material.name}</strong><span>{material.stock} {material.unit}{material.stock !== 1 ? "es" : ""} disp. · {lps(material.unit_cost)} c/u</span></div>
-                      <input type="number" min={0} max={material.stock} step="1" value={packagingQuantity(material.id)} onChange={(event) => setPackagingQuantity(material.id, Number(event.target.value))} aria-label={`Cantidad de ${material.name} usada`} />
-                    </label>
-                  ))}
-                </div>
-                {packagingCost > 0 && <div className="checkout-packaging-cost"><span>Costo absorbido por la empresa</span><strong>{lps(packagingCost)}</strong></div>}
-              </section>
-            )}
 
             <footer className="checkout-actions">
               <button className="secondary-button" disabled={issuing} onClick={() => setCheckoutOpen(false)}>Cancelar</button>
