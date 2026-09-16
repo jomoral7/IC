@@ -870,6 +870,30 @@ export function App() {
     await loadWorkspace();
   }
 
+  /** Un material con historial se desactiva; borrar sus movimientos rompería la auditoría contable. */
+  async function deletePackagingMaterial(material: PackagingMaterial) {
+    if (!supabase) return;
+    const { count: movements, error: movementError } = await supabase
+      .from("packaging_movements")
+      .select("id", { count: "exact", head: true })
+      .eq("material_id", material.id);
+    if (movementError) {
+      setNotice(movementError.message);
+      return;
+    }
+    const action = movements && movements > 0
+      ? supabase.from("packaging_materials").update({ active: false, updated_at: new Date().toISOString() }).eq("id", material.id)
+      : supabase.from("packaging_materials").delete().eq("id", material.id);
+    const { error } = await action;
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    await logAudit(movements && movements > 0 ? "Desactivar material de empaque" : "Eliminar material de empaque", material.name);
+    setNotice(movements && movements > 0 ? "Material desactivado: se conserva su historial contable" : "Material eliminado");
+    await loadWorkspace();
+  }
+
   async function createOrder(product: Product, quantity: number, supplierId: string | null) {
     if (!supabase || quantity <= 0) return;
     const location = await ensureLocation();
@@ -2005,6 +2029,7 @@ export function App() {
             materials={packagingMaterials}
             saveMaterial={savePackagingMaterial}
             registerPurchase={registerPackagingPurchase}
+            deleteMaterial={deletePackagingMaterial}
           />
         )}
         {selectedModule === "Facturas" && <Invoices documents={documents} onDownload={downloadInvoice} onOpen={openInvoiceDetail} />}

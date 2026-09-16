@@ -1,4 +1,4 @@
-import { AlertTriangle, Banknote, Boxes, Edit3, Landmark, PackagePlus, Plus, Save, X } from "lucide-react";
+import { AlertTriangle, Banknote, Boxes, Edit3, Landmark, PackagePlus, Plus, Save, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { PackagingMaterial, PackagingMaterialForm } from "../types";
 import { lps, stockState } from "../lib/format";
@@ -21,10 +21,12 @@ export function Packaging({
   materials,
   saveMaterial,
   registerPurchase,
+  deleteMaterial,
 }: {
   materials: PackagingMaterial[];
   saveMaterial: (form: PackagingMaterialForm, id?: string) => Promise<void>;
   registerPurchase: (material: PackagingMaterial, quantity: number, unitCost: number, paymentAccount: "cash" | "bank") => Promise<void>;
+  deleteMaterial: (material: PackagingMaterial) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<PackagingMaterial | null>(null);
   const [creating, setCreating] = useState(false);
@@ -62,7 +64,7 @@ export function Packaging({
                   <div><dt>Disponibles</dt><dd><strong>{material.stock}</strong> {material.unit}{material.stock !== 1 ? "es" : ""}</dd></div>
                   <div><dt>Mínimo</dt><dd>{material.min_stock}</dd></div>
                 </dl>
-                <div className="packaging-card-actions"><button className="secondary-button" onClick={() => setBuying(material)}><PackagePlus size={16} /> Registrar compra</button><button className="icon-button" title="Editar material" onClick={() => setEditing(material)}><Edit3 size={16} /></button></div>
+                <div className="packaging-card-actions"><button className="secondary-button" onClick={() => setBuying(material)}><PackagePlus size={16} /> Registrar compra</button><button className="icon-button" title="Editar material" onClick={() => setEditing(material)}><Edit3 size={16} /></button><button className="icon-button packaging-delete" title="Eliminar material" onClick={() => void deleteMaterial(material)}><Trash2 size={16} /></button></div>
               </article>;
             })}
           </div>
