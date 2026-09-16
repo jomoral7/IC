@@ -3405,12 +3405,118 @@ td:last-child {
   justify-content: center;
 }
 
+/* Materiales de empaque: activos internos consumidos por las ventas. */
+.packaging-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.packaging-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.packaging-toolbar .inv-search { flex: 1; }
+.packaging-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 12px;
+}
+.packaging-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.packaging-card-head,
+.packaging-card-actions,
+.checkout-packaging-head,
+.checkout-packaging-cost,
+.material-stock-note,
+.material-purchase-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.packaging-card-head { align-items: flex-start; }
+.packaging-card-head > div { min-width: 0; }
+.packaging-card-head span:first-child,
+.checkout-packaging-head span,
+.material-auto-code span,
+.material-section span,
+.material-purchase-total small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.packaging-card h3 { margin: 3px 0; font-size: 17px; overflow-wrap: anywhere; }
+.packaging-card small { color: var(--muted); font-size: 12px; }
+.packaging-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 13px 10px; margin: 18px 0; }
+.packaging-card dl div { min-width: 0; }
+.packaging-card dt { color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.packaging-card dd { margin: 4px 0 0; color: var(--navy); font-size: 13px; overflow-wrap: anywhere; }
+.packaging-card dd strong { font-size: 18px; }
+.packaging-card-actions { justify-content: flex-start; border-top: 1px solid var(--line); padding-top: 12px; }
+.packaging-card-actions .secondary-button { flex: 1; justify-content: center; }
+.material-drawer { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; padding-bottom: 0; }
+.material-drawer-body { min-height: 0; overflow-y: auto; padding: 2px 2px 14px; }
+.material-auto-code,
+.material-stock-note,
+.material-purchase-total {
+  grid-column: 1 / -1;
+  padding: 12px;
+  border: 1px solid #d9e5ec;
+  border-radius: 8px;
+  background: #f4f8fb;
+  color: var(--navy);
+}
+.material-auto-code strong { font-size: 13px; }
+.material-section { display: grid; gap: 3px; grid-column: 1 / -1; padding-top: 6px; border-top: 1px solid var(--line); color: var(--navy); }
+.material-section span { font-size: 11px; letter-spacing: 0; text-transform: none; }
+.material-stock-note { justify-content: flex-start; font-size: 13px; }
+.material-stock-note svg { color: var(--mustard); }
+.material-purchase-total { align-items: flex-end; flex-wrap: wrap; }
+.material-purchase-total span { color: var(--muted); font-size: 12px; }
+.material-purchase-total strong { margin-left: auto; font-size: 24px; color: var(--navy); }
+.material-purchase-total small { width: 100%; letter-spacing: 0; text-transform: none; }
+.checkout-packaging {
+  margin: 14px 22px 0;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+}
+.checkout-packaging-head { align-items: flex-start; }
+.checkout-packaging-head strong { display: block; margin-top: 3px; color: var(--navy); font-size: 14px; }
+.checkout-packaging-head small { max-width: 180px; color: var(--muted); font-size: 11px; text-align: right; }
+.checkout-packaging-list { display: grid; gap: 7px; margin-top: 10px; }
+.checkout-packaging-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfd; }
+.checkout-packaging-item > div { min-width: 0; }
+.checkout-packaging-item strong,
+.checkout-packaging-item span { display: block; }
+.checkout-packaging-item strong { color: var(--navy); font-size: 13px; }
+.checkout-packaging-item span { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.checkout-packaging-item input { flex: 0 0 72px; width: 72px; min-height: 38px; text-align: center; }
+.checkout-packaging-cost { margin-top: 10px; padding: 10px 0 0; border-top: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
+.checkout-packaging-cost strong { color: #995f00; font-size: 16px; }
+
 @media (max-width: 760px) {
   .checkout-methods,
   .checkout-cash-panel,
   .checkout-collection-methods { grid-template-columns: 1fr; }
   .checkout-actions { grid-template-columns: 1fr; }
   .checkout-actions .primary-button { grid-row: 1; }
+  .packaging-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .packaging-toolbar { display: grid; grid-template-columns: 1fr; }
+  .packaging-toolbar .primary-button { width: 100%; justify-content: center; }
+  .checkout-packaging { margin-inline: 22px; }
+  .checkout-packaging-head { display: grid; }
+  .checkout-packaging-head small { max-width: none; text-align: left; }
 }
 
 /* ============================================================

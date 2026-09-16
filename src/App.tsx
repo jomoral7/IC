@@ -23,7 +23,7 @@ import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
 import { supabase } from "./lib/supabase";
-import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
+import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, PackagingMaterial, PackagingMaterialForm, PackagingUsage, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
 import { BrandMark, LoginScreen, roleLabel } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
 import { POS, type POSInvoicePreview } from "./modules/Pos";
@@ -38,12 +38,14 @@ import { Labels } from "./modules/Labels";
 import { Offers } from "./modules/Offers";
 import { MySales } from "./modules/MySales";
 import { InvoiceDetailModal, type InvoiceItem } from "./modules/InvoiceDetail";
+import { Packaging } from "./modules/Packaging";
 
 const modules = [
   { label: "Dashboard", icon: BarChart3 },
   { label: "POS", icon: ShoppingBag },
   { label: "Mis ventas", icon: UserRound },
   { label: "Inventario", icon: Boxes },
+  { label: "Empaque", icon: ShoppingBag },
   { label: "Ofertas", icon: Tag },
   { label: "Etiquetas", icon: Printer },
   { label: "Facturas", icon: ReceiptText },
@@ -63,8 +65,8 @@ type ModuleName = (typeof modules)[number]["label"];
 // El vendedor (sales) SOLO ve el POS: vende con el precio final, sin costos ni analisis.
 const ROLE_PERMISSIONS: Record<string, ModuleName[]> = {
   admin: modules.map((m) => m.label),
-  manager: ["Dashboard", "POS", "Inventario", "Ofertas", "Etiquetas", "Facturas", "Kardex", "Vendedores", "Analisis", "Contabilidad", "Clientes", "Proveedores", "Reportes"],
-  warehouse: ["Dashboard", "Inventario", "Etiquetas", "Proveedores", "Kardex"],
+  manager: ["Dashboard", "POS", "Inventario", "Empaque", "Ofertas", "Etiquetas", "Facturas", "Kardex", "Vendedores", "Analisis", "Contabilidad", "Clientes", "Proveedores", "Reportes"],
+  warehouse: ["Dashboard", "Inventario", "Empaque", "Etiquetas", "Proveedores", "Kardex"],
   sales: ["POS", "Mis ventas", "Etiquetas"],
 };
 
@@ -92,6 +94,7 @@ export function App() {
   const [salesLines, setSalesLines] = useState<SalesLine[]>([]);
   const [backupDaysAgo, setBackupDaysAgo] = useState<number | null>(null);
   const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterial[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const query = "";
   const [notice, setNotice] = useState("");
@@ -143,7 +146,7 @@ export function App() {
   async function loadWorkspace() {
     if (!supabase) return;
     setLoading(true);
-    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes] =
+    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes, packagingRes, packagingStockRes] =
       await Promise.all([
         supabase.from("products").select("*").eq("active", true).order("name").limit(10000),
         supabase.from("stock_levels").select("product_id, quantity, location_id").limit(20000),
@@ -175,9 +178,12 @@ export function App() {
           .is("documents.voided_at", null)
           .limit(2000),
         supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300),
+        supabase.from("packaging_materials").select("*").eq("active", true).order("name"),
+        supabase.from("packaging_stock_levels").select("material_id, quantity, location_id"),
       ]);
 
     if (productRes.error) setNotice(productRes.error.message);
+    if (packagingRes.error) console.warn("No se pudieron cargar materiales de empaque:", packagingRes.error.message);
 
     // Stock total + desglose por sucursal.
     const byLocation = new Map<string, Record<string, number>>();
@@ -209,6 +215,22 @@ export function App() {
         };
       }),
     );
+    const packagingByLocation = new Map<string, Record<string, number>>();
+    const packagingTotals = new Map<string, number>();
+    for (const row of packagingStockRes.data ?? []) {
+      const qty = Number(row.quantity ?? 0);
+      packagingTotals.set(row.material_id, (packagingTotals.get(row.material_id) ?? 0) + qty);
+      const map = packagingByLocation.get(row.material_id) ?? {};
+      map[row.location_id] = qty;
+      packagingByLocation.set(row.material_id, map);
+    }
+    setPackagingMaterials((packagingRes.data ?? []).map((material: any) => ({
+      ...material,
+      stock: Number(packagingTotals.get(material.id) ?? 0),
+      stockByLocation: packagingByLocation.get(material.id) ?? {},
+      min_stock: Number(material.min_stock ?? 0),
+      unit_cost: Number(material.unit_cost ?? 0),
+    })) as PackagingMaterial[]);
     setSuppliers((supplierRes.data ?? []) as Party[]);
     setCustomers((customerRes.data ?? []) as Party[]);
     setLocations((locationRes.data ?? []) as Location[]);
@@ -773,6 +795,81 @@ export function App() {
     await loadWorkspace();
   }
 
+  /** Crea o actualiza una referencia de empaque. El stock inicial se contabiliza como una compra. */
+  async function savePackagingMaterial(form: PackagingMaterialForm, id?: string) {
+    if (!supabase || !form.name.trim()) return;
+    const payload = {
+      name: form.name.trim(),
+      kind: form.kind.trim() || "Otro",
+      description: form.description.trim() || null,
+      size: form.size.trim() || null,
+      color: form.color.trim() || null,
+      unit: form.unit || "unidad",
+      min_stock: Math.max(0, Number(form.min_stock) || 0),
+      unit_cost: Math.max(0, Number(form.unit_cost) || 0),
+    };
+    if (id) {
+      const { error } = await supabase.from("packaging_materials").update(payload).eq("id", id);
+      setNotice(error ? error.message : "Material de empaque actualizado");
+      await loadWorkspace();
+      return;
+    }
+    const { data, error } = await supabase
+      .from("packaging_materials")
+      .insert({ ...payload, created_by: session?.user?.id ?? null })
+      .select("*")
+      .single();
+    if (error || !data) {
+      setNotice(error?.message ?? "No se pudo crear el material");
+      return;
+    }
+    const material = { ...data, stock: 0, stockByLocation: {} } as PackagingMaterial;
+    if (Number(form.initial_stock) > 0) {
+      await registerPackagingPurchase(material, Number(form.initial_stock), Number(form.unit_cost), form.payment_account);
+      return;
+    }
+    await logAudit("Crear material de empaque", `${data.name} (${data.internal_code})`);
+    setNotice("Material de empaque creado");
+    await loadWorkspace();
+  }
+
+  /** Compra de bolsas, cajas u otro empaque: primero activo, pagado desde Banco o Caja. */
+  async function registerPackagingPurchase(
+    material: PackagingMaterial,
+    quantity: number,
+    unitCost: number,
+    paymentAccount: "cash" | "bank",
+  ) {
+    if (!supabase || quantity <= 0 || unitCost < 0) return;
+    const location = await ensureLocation();
+    const total = Number((quantity * unitCost).toFixed(2));
+    const currentAtLocation = Number(material.stockByLocation[location.id] ?? 0);
+    const { error: stockError } = await supabase
+      .from("packaging_stock_levels")
+      .upsert({ material_id: material.id, location_id: location.id, quantity: currentAtLocation + quantity });
+    if (stockError) {
+      setNotice(stockError.message);
+      return;
+    }
+    await supabase.from("packaging_materials").update({ unit_cost: unitCost, updated_at: new Date().toISOString() }).eq("id", material.id);
+    await supabase.from("packaging_movements").insert({
+      material_id: material.id,
+      location_id: location.id,
+      movement_type: "purchase",
+      quantity,
+      unit_cost: unitCost,
+      notes: `Compra de ${material.kind.toLowerCase()} · pagada desde ${paymentAccount === "bank" ? "Banco" : "Caja"}`,
+      created_by: session?.user?.id ?? null,
+    });
+    await postJournal(new Date().toISOString().slice(0, 10), `Compra empaque ${material.internal_code}`, "purchase", null, [
+      { account_id: accountIdByKey("packaging_inventory"), debit: total, credit: 0, description: `Entrada ${material.name}` },
+      { account_id: accountIdByKey(paymentAccount), debit: 0, credit: total, description: "Pago compra empaque" },
+    ]);
+    await logAudit("Compra de empaque", `${material.name} · +${quantity} ${material.unit} · ${paymentAccount === "bank" ? "Banco" : "Caja"}`);
+    setNotice(`Compra registrada · +${quantity} ${material.unit}${quantity !== 1 ? "es" : ""}`);
+    await loadWorkspace();
+  }
+
   async function createOrder(product: Product, quantity: number, supplierId: string | null) {
     if (!supabase || quantity <= 0) return;
     const location = await ensureLocation();
@@ -926,11 +1023,20 @@ export function App() {
     discountPct = 0,
     discountAmount = 0,
     applyTax = false,
+    packagingUsage: PackagingUsage[] = [],
   ) {
     if (!supabase || cart.length === 0) return;
     if (cart.some((line) => line.qty > line.stock)) {
       setNotice("Una o más prendas ya no tienen suficiente stock. Recarga el inventario e intenta de nuevo.");
       return;
+    }
+    const usage = packagingUsage.filter((item) => item.quantity > 0);
+    for (const item of usage) {
+      const material = packagingMaterials.find((entry) => entry.id === item.material_id);
+      if (!material || item.quantity > material.stock) {
+        setNotice(`No hay suficiente stock de ${material?.name ?? "un material de empaque"}.`);
+        return;
+      }
     }
     const location = await ensureLocation();
     // Si el nombre coincide con un cliente registrado, se enlaza; si no, se guarda como texto.
@@ -1011,6 +1117,40 @@ export function App() {
       });
     }
 
+    // El empaque se consume internamente: no cambia el subtotal, el ISV ni el total de la factura.
+    const packagingCost = Number(usage.reduce((sum, item) => {
+      const material = packagingMaterials.find((entry) => entry.id === item.material_id);
+      return sum + item.quantity * Number(material?.unit_cost ?? 0);
+    }, 0).toFixed(2));
+    for (const item of usage) {
+      const material = packagingMaterials.find((entry) => entry.id === item.material_id);
+      if (!material) continue;
+      const currentAtLocation = Number(material.stockByLocation[location.id] ?? 0);
+      const unitCost = Number(material.unit_cost ?? 0);
+      await supabase.from("packaging_stock_levels").upsert({
+        material_id: material.id,
+        location_id: location.id,
+        quantity: Math.max(0, currentAtLocation - item.quantity),
+      });
+      await supabase.from("packaging_movements").insert({
+        material_id: material.id,
+        location_id: location.id,
+        document_id: document.id,
+        movement_type: "use",
+        quantity: item.quantity,
+        unit_cost: unitCost,
+        notes: `Empaque usado en factura ${document.document_number}`,
+        created_by: session?.user?.id ?? null,
+      });
+      await supabase.from("sale_packaging_usage").insert({
+        document_id: document.id,
+        material_id: material.id,
+        quantity: item.quantity,
+        unit_cost: unitCost,
+        total_cost: Number((item.quantity * unitCost).toFixed(2)),
+      });
+    }
+
     // Comision del vendedor (interna, no aparece en la factura).
     if (sellerId) {
       const seller = sellers.find((sv) => sv.id === sellerId);
@@ -1043,10 +1183,12 @@ export function App() {
       { account_id: accountIdByKey("tax_payable"), debit: 0, credit: tax, description: "ISV por pagar" },
       { account_id: accountIdByKey("cogs"), debit: costTotal, credit: 0, description: "Costo de venta" },
       { account_id: accountIdByKey("inventory"), debit: 0, credit: costTotal, description: "Salida de inventario" },
+      { account_id: accountIdByKey("packaging_expense"), debit: packagingCost, credit: 0, description: "Empaque usado" },
+      { account_id: accountIdByKey("packaging_inventory"), debit: 0, credit: packagingCost, description: "Consumo de empaque" },
     ]);
 
     const paymentLabel = collectionMethod === "cash" ? "Efectivo" : collectionMethod === "bank_deposit" ? "Depósito bancario" : "Transferencia bancaria";
-    await logAudit("Venta", `Factura ${document.document_number} · L ${total.toLocaleString("es-HN")} · ${paymentTerms === "credit" ? "Crédito" : paymentLabel}`);
+    await logAudit("Venta", `Factura ${document.document_number} · L ${total.toLocaleString("es-HN")} · ${paymentTerms === "credit" ? "Crédito" : paymentLabel}${usage.length ? ` · empaque L ${packagingCost.toLocaleString("es-HN")}` : ""}`);
     setCart([]);
     setNotice(`Factura ${document.document_number} emitida`);
     await loadWorkspace();
@@ -1061,6 +1203,7 @@ export function App() {
       "profiles", "inventory_locations", "products", "stock_levels", "parties", "sellers",
       "commission_rules", "seller_goals", "documents", "document_items", "payments",
       "invoice_voids", "stock_requests", "stock_adjustments", "inventory_movements",
+      "packaging_materials", "packaging_stock_levels", "packaging_movements", "sale_packaging_usage",
       "seller_commissions", "seller_bonus_payments", "chart_of_accounts", "journal_entries", "journal_lines",
     ];
     const dump: Record<string, any> = { _meta: { app: "Inversiones del Caribe", generated_at: new Date().toISOString() } };
@@ -1091,6 +1234,7 @@ export function App() {
     "inventory_locations", "chart_of_accounts", "products", "sellers", "parties", "seller_goals",
     "stock_levels", "documents", "document_items", "payments", "invoice_voids", "stock_requests",
     "stock_adjustments", "inventory_movements", "seller_commissions", "seller_bonus_payments",
+    "packaging_materials", "packaging_stock_levels", "packaging_movements", "sale_packaging_usage",
     "journal_entries", "journal_lines",
   ];
 
@@ -1503,6 +1647,35 @@ export function App() {
         notes: `Anulacion factura ${doc.document_number}`,
       });
     }
+    // El empaque usado tambien vuelve al control interno al anular la factura.
+    const { data: packagingUsageRows } = await supabase
+      .from("sale_packaging_usage")
+      .select("material_id, quantity, unit_cost, total_cost")
+      .eq("document_id", doc.id);
+    let packagingCost = 0;
+    for (const usage of packagingUsageRows ?? []) {
+      const material = packagingMaterials.find((entry) => entry.id === usage.material_id);
+      if (!material) continue;
+      const currentAtLocation = Number(material.stockByLocation[location.id] ?? 0);
+      const quantity = Number(usage.quantity ?? 0);
+      const unitCost = Number(usage.unit_cost ?? 0);
+      packagingCost += Number(usage.total_cost ?? quantity * unitCost);
+      await supabase.from("packaging_stock_levels").upsert({
+        material_id: material.id,
+        location_id: location.id,
+        quantity: currentAtLocation + quantity,
+      });
+      await supabase.from("packaging_movements").insert({
+        material_id: material.id,
+        location_id: location.id,
+        document_id: doc.id,
+        movement_type: "void_return",
+        quantity,
+        unit_cost: unitCost,
+        notes: `Reintegro por anulacion factura ${doc.document_number}`,
+        created_by: session?.user?.id ?? null,
+      });
+    }
     // Asiento de reversion (contrario a la venta) para cuadrar contabilidad.
     const subtotal = Number(doc.subtotal ?? doc.total);
     const discount = Number(doc.discount ?? 0);
@@ -1521,6 +1694,8 @@ export function App() {
       { account_id: accountIdByKey("tax_payable"), debit: tax, credit: 0, description: "Reversa ISV" },
       { account_id: accountIdByKey("cogs"), debit: 0, credit: costTotal, description: "Reversa costo de venta" },
       { account_id: accountIdByKey("inventory"), debit: costTotal, credit: 0, description: "Reingreso inventario" },
+      { account_id: accountIdByKey("packaging_expense"), debit: 0, credit: packagingCost, description: "Reversa gasto empaque" },
+      { account_id: accountIdByKey("packaging_inventory"), debit: packagingCost, credit: 0, description: "Reingreso empaque" },
     ]);
 
     // 4) Registrar la devolucion del dinero: reembolso (pago negativo) y dejar la factura en pagado = 0.
@@ -1794,6 +1969,7 @@ export function App() {
             addToCart={addToCart}
             customers={customers}
             sellers={sellers}
+            packagingMaterials={packagingMaterials}
             issueSale={issueSale}
             total={cartTotal}
             lockSeller={currentRole === "sales"}
@@ -1822,6 +1998,13 @@ export function App() {
             receiveOrder={receiveOrder}
             receiveOrderQty={receiveOrderQty}
             cancelOrder={cancelOrder}
+          />
+        )}
+        {selectedModule === "Empaque" && (
+          <Packaging
+            materials={packagingMaterials}
+            saveMaterial={savePackagingMaterial}
+            registerPurchase={registerPackagingPurchase}
           />
         )}
         {selectedModule === "Facturas" && <Invoices documents={documents} onDownload={downloadInvoice} onOpen={openInvoiceDetail} />}

@@ -188,6 +188,39 @@ export type AdjustmentDraft = { product: Product; quantity: number; reason: stri
 /** Una linea de una entrada de pedido / compra. */
 export type PurchaseLine = { product: Product; qty: number; unit_cost: number };
 
+/** Insumo interno usado para preparar una venta. No forma parte de la factura del cliente. */
+export type PackagingMaterial = {
+  id: string;
+  internal_code: string;
+  name: string;
+  kind: string;
+  description: string | null;
+  size: string | null;
+  color: string | null;
+  unit: string;
+  min_stock: number;
+  unit_cost: number;
+  active: boolean;
+  stock: number;
+  stockByLocation: Record<string, number>;
+};
+
+export type PackagingMaterialForm = {
+  name: string;
+  kind: string;
+  description: string;
+  size: string;
+  color: string;
+  unit: string;
+  min_stock: number;
+  unit_cost: number;
+  initial_stock: number;
+  payment_account: "cash" | "bank";
+};
+
+/** Consumo interno de empaque asociado a una venta, invisible para el cliente. */
+export type PackagingUsage = { material_id: string; quantity: number };
+
 export type StockRequest = {
   id: string;
   product_id: string;

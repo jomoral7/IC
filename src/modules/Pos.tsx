@@ -1,6 +1,6 @@
 import { BadgePercent, Banknote, Check, ChevronDown, CreditCard, Eye, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { CartLine, CashCollectionMethod, Party, Product, Seller } from "../types";
+import type { CartLine, CashCollectionMethod, PackagingMaterial, PackagingUsage, Party, Product, Seller } from "../types";
 import { lps, stockState } from "../lib/format";
 import { EmptyWork } from "../ui";
 import { ScannerModal } from "./Scanner";
@@ -44,6 +44,7 @@ export function POS({
   addToCart,
   customers,
   sellers,
+  packagingMaterials,
   issueSale,
   total,
   lockSeller = false,
@@ -59,6 +60,7 @@ export function POS({
   addToCart: (product: Product) => void;
   customers: Party[];
   sellers: Seller[];
+  packagingMaterials: PackagingMaterial[];
   issueSale: (
     customerName: string,
     sellerId: string | null,
@@ -67,6 +69,7 @@ export function POS({
     discountPct: number,
     discountAmount: number,
     applyTax: boolean,
+    packagingUsage: PackagingUsage[],
   ) => Promise<any>;
   total: number;
   /** Si es true (rol vendedor), el vendedor queda fijo y no puede elegir otro. */
@@ -104,6 +107,7 @@ export function POS({
   const [scanMessage, setScanMessage] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [cashReceived, setCashReceived] = useState("");
+  const [packagingUsage, setPackagingUsage] = useState<PackagingUsage[]>([]);
 
   const subtotal = total;
   const hasManualDiscount = (line: CartLine) => (line.manual_discount_pct ?? 0) > 0 || (line.manual_discount_amount ?? 0) > 0;
@@ -210,7 +214,7 @@ export function POS({
   async function submit() {
     if (cart.length === 0 || issuing) return;
     setIssuing(true);
-    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, collectionMethod, discountPct, discountAmount, applyTax);
+    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, collectionMethod, discountPct, discountAmount, applyTax, packagingUsage.filter((item) => item.quantity > 0));
     setIssuing(false);
     if (doc) {
       setLastSale(doc);
@@ -227,6 +231,7 @@ export function POS({
     setTerms("cash");
     setCollectionMethod("cash");
     setCashReceived("");
+    setPackagingUsage([]);
   }
 
   function openCheckout() {
@@ -234,6 +239,20 @@ export function POS({
     setCashReceived(grandTotal.toFixed(2));
     setCheckoutOpen(true);
   }
+
+  const packagingCost = packagingUsage.reduce((sum, item) => {
+    const material = packagingMaterials.find((entry) => entry.id === item.material_id);
+    return sum + item.quantity * Number(material?.unit_cost ?? 0);
+  }, 0);
+  function setPackagingQuantity(materialId: string, quantity: number) {
+    const material = packagingMaterials.find((entry) => entry.id === materialId);
+    const bounded = Math.max(0, Math.min(Number.isFinite(quantity) ? quantity : 0, material?.stock ?? 0));
+    setPackagingUsage((current) => {
+      const remainder = current.filter((entry) => entry.material_id !== materialId);
+      return bounded > 0 ? [...remainder, { material_id: materialId, quantity: bounded }] : remainder;
+    });
+  }
+  const packagingQuantity = (materialId: string) => packagingUsage.find((item) => item.material_id === materialId)?.quantity ?? 0;
 
   function openInvoicePreview() {
     if (cart.length === 0) return;
@@ -643,6 +662,21 @@ export function POS({
               {tax > 0 && <div><span>ISV 15%</span><b>{lps(tax)}</b></div>}
               <div className="checkout-review-total"><span>Total</span><strong>{lps(grandTotal)}</strong></div>
             </div>
+
+            {packagingMaterials.length > 0 && (
+              <section className="checkout-packaging" aria-label="Materiales de empaque usados">
+                <div className="checkout-packaging-head"><div><span>Control interno</span><strong>Materiales de empaque usados</strong></div><small>No modifica el total ni aparece en la factura.</small></div>
+                <div className="checkout-packaging-list">
+                  {packagingMaterials.map((material) => (
+                    <label key={material.id} className="checkout-packaging-item">
+                      <div><strong>{material.name}</strong><span>{material.stock} {material.unit}{material.stock !== 1 ? "es" : ""} disp. · {lps(material.unit_cost)} c/u</span></div>
+                      <input type="number" min={0} max={material.stock} step="1" value={packagingQuantity(material.id)} onChange={(event) => setPackagingQuantity(material.id, Number(event.target.value))} aria-label={`Cantidad de ${material.name} usada`} />
+                    </label>
+                  ))}
+                </div>
+                {packagingCost > 0 && <div className="checkout-packaging-cost"><span>Costo absorbido por la empresa</span><strong>{lps(packagingCost)}</strong></div>}
+              </section>
+            )}
 
             <footer className="checkout-actions">
               <button className="secondary-button" disabled={issuing} onClick={() => setCheckoutOpen(false)}>Cancelar</button>
