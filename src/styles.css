@@ -3465,7 +3465,15 @@ td:last-child {
 .packaging-card dd strong { font-size: 18px; }
 .packaging-card-actions { justify-content: flex-start; border-top: 1px solid var(--line); padding-top: 12px; }
 .packaging-card-actions .secondary-button { flex: 1; justify-content: center; }
-.material-drawer { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; padding-bottom: 0; }
+.material-drawer {
+  width: min(820px, calc(100vw - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.material-drawer .form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.material-drawer .form-grid > label { min-width: 0; }
 .material-drawer-body { min-height: 0; overflow-y: auto; padding: 2px 2px 14px; }
 .material-auto-code,
 .material-stock-note,
