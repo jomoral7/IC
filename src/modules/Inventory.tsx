@@ -290,7 +290,14 @@ export function Inventory({
     return [...matchesFilter].sort((a, b) => {
       const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return dateSort === "newest" ? bDate - aDate : aDate - bDate;
+      const dateDifference = dateSort === "newest" ? bDate - aDate : aDate - bDate;
+      if (dateDifference !== 0) return dateDifference;
+
+      // La carga inicial se importo en un mismo instante. El codigo conserva el
+      // orden de alta dentro de ese lote y evita que ambos botones parezcan iguales.
+      const aCode = Number((a.internal_code ?? a.sku).match(/\d+$/)?.[0] ?? 0);
+      const bCode = Number((b.internal_code ?? b.sku).match(/\d+$/)?.[0] ?? 0);
+      return dateSort === "newest" ? bCode - aCode : aCode - bCode;
     });
   }, [filteredByFacets, filter, dateSort]);
 
