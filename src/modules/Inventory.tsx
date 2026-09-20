@@ -1,5 +1,7 @@
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Edit3,
   PackagePlus,
   Plus,
@@ -20,6 +22,7 @@ import { ScannerModal } from "./Scanner";
 import { LabelScanner, type LabelFields } from "./LabelScanner";
 
 type Filter = "all" | "low" | "orders";
+type DateSort = "newest" | "oldest";
 
 /** Une el catalogo precargado con los valores ya existentes, sin duplicados. */
 function mergeOptions(catalog: string[], existing: string[]): string[] {
@@ -225,7 +228,7 @@ export function Inventory({
   brands: string[];
   sizes: string[];
   colors: string[];
-  saveProduct: (form: ProductForm, id?: string) => Promise<void>;
+  saveProduct: (form: ProductForm, id?: string) => Promise<boolean>;
   createProductMatrix: (
     base: { name: string; description: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
     combos: { size: string; color: string; qty: number }[],
@@ -242,6 +245,7 @@ export function Inventory({
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [dateSort, setDateSort] = useState<DateSort>("newest");
   const [departmentFilter, setDepartmentFilter] = useState("__all__");
   const [categoryFilter, setCategoryFilter] = useState("__all__");
   const [brandFilter, setBrandFilter] = useState("__all__");
@@ -281,7 +285,14 @@ export function Inventory({
     const matchesBrand = brandFilter === "__all__" || (p.brand || "Sin marca") === brandFilter;
     return matchesDepartment && matchesCategory && matchesBrand;
   });
-  const visible = filter === "low" ? filteredByFacets.filter((p) => stockState(p.stock, p.min_stock) !== "ok") : filteredByFacets;
+  const visible = useMemo(() => {
+    const matchesFilter = filter === "low" ? filteredByFacets.filter((p) => stockState(p.stock, p.min_stock) !== "ok") : filteredByFacets;
+    return [...matchesFilter].sort((a, b) => {
+      const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateSort === "newest" ? bDate - aDate : aDate - bDate;
+    });
+  }, [filteredByFacets, filter, dateSort]);
 
   // Agrupar variantes bajo su producto base solo cuando el usuario lo pide.
   const groups = useMemo(() => {
@@ -358,6 +369,29 @@ export function Inventory({
               <Truck size={15} /> Pedidos{stockRequests.length ? ` (${stockRequests.length})` : ""}
             </button>
           </div>
+          {filter !== "orders" && (
+            <div className="inv-date-sort" role="group" aria-label="Ordenar inventario por fecha de ingreso">
+              <span>Fecha</span>
+              <button
+                type="button"
+                className={dateSort === "newest" ? "active" : ""}
+                onClick={() => setDateSort("newest")}
+                aria-label="Ordenar de más reciente a más antiguo"
+                title="Más recientes primero"
+              >
+                <ArrowDown size={15} /> Recientes
+              </button>
+              <button
+                type="button"
+                className={dateSort === "oldest" ? "active" : ""}
+                onClick={() => setDateSort("oldest")}
+                aria-label="Ordenar de más antiguo a más reciente"
+                title="Más antiguos primero"
+              >
+                <ArrowUp size={15} /> Antiguos
+              </button>
+            </div>
+          )}
           {filter !== "orders" && (
             <div className="inv-facet-filters">
               <label className="inv-filter-select">
@@ -936,7 +970,7 @@ function ProductDrawer({
   sizes: string[];
   colors: string[];
   onClose: () => void;
-  onSave: (form: ProductForm, id?: string) => Promise<void>;
+  onSave: (form: ProductForm, id?: string) => Promise<boolean>;
 }) {
   const categoryOptions = mergeOptions(CATEGORY_OPTIONS, categories);
   const colorOptions = mergeOptions(COLOR_OPTIONS, colors);
@@ -994,9 +1028,9 @@ function ProductDrawer({
   async function submit() {
     if (!canSave || saving) return;
     setSaving(true);
-    await onSave(form, product?.id);
+    const saved = await onSave(form, product?.id);
     setSaving(false);
-    onClose();
+    if (saved) onClose();
   }
 
   return (

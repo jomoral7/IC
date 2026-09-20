@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
@@ -101,6 +101,7 @@ export function App() {
   const [detailDoc, setDetailDoc] = useState<any | null>(null);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
   const [detailCommission, setDetailCommission] = useState<{ sellerName: string | null; amount: number } | null>(null);
+  const loadedWorkspaceFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -108,15 +109,23 @@ export function App() {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      // Refreshing an access token does not require fetching all application data again.
+      if (event === "TOKEN_REFRESHED") return;
+      setSession((current) => (current?.user.id === nextSession?.user.id ? current : nextSession));
     });
     return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (session) void loadWorkspace();
-  }, [session]);
+    if (!session?.user.id) {
+      loadedWorkspaceFor.current = null;
+      return;
+    }
+    if (loadedWorkspaceFor.current === session.user.id) return;
+    loadedWorkspaceFor.current = session.user.id;
+    void loadWorkspace(true);
+  }, [session?.user.id]);
 
   // Si el modulo actual no esta permitido para el rol, saltar al primero permitido.
   useEffect(() => {
@@ -143,12 +152,33 @@ export function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  async function loadWorkspace() {
+  async function loadWorkspace(showLoader = false) {
     if (!supabase) return;
-    setLoading(true);
+    const client = supabase;
+    if (showLoader) setLoading(true);
+
+    // Supabase pagina las consultas grandes. Cargamos el catalogo completo por bloques
+    // para que el inventario siga mostrando referencias cuando supere el limite del API.
+    async function loadAllProducts() {
+      const rows: any[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await client
+          .from("products")
+          .select("*")
+          .eq("active", true)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (error) return { data: rows, error };
+        rows.push(...(data ?? []));
+        if ((data ?? []).length < pageSize) return { data: rows, error: null };
+      }
+    }
+
     const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes, packagingRes, packagingStockRes] =
       await Promise.all([
-        supabase.from("products").select("*").eq("active", true).order("name").limit(10000),
+        loadAllProducts(),
         supabase.from("stock_levels").select("product_id, quantity, location_id").limit(20000),
         supabase.from("parties").select("id, name, kind, tax_id, phone").eq("kind", "supplier").order("name"),
         supabase.from("parties").select("id, name, kind, tax_id, phone").eq("kind", "customer").order("name"),
@@ -347,7 +377,7 @@ export function App() {
       setLoading(false);
       return;
     }
-    setLoading(false);
+    if (showLoader) setLoading(false);
   }
 
   // Nombre del usuario actual (para huella y registros).
@@ -382,8 +412,8 @@ export function App() {
     return data ?? `IC-${Date.now().toString().slice(-6)}`;
   }
 
-  async function saveProduct(form: ProductForm, id?: string) {
-    if (!supabase) return;
+  async function saveProduct(form: ProductForm, id?: string): Promise<boolean> {
+    if (!supabase) return false;
     const generatedCode = form.internal_code || (await nextInternalCode());
     const payload = {
       sku: (form.sku || generatedCode).trim(),
@@ -417,14 +447,20 @@ export function App() {
       : await supabase.from("products").insert(writePayload).select("*").single();
     if (error) {
       setNotice(error.message);
-      return;
+      return false;
     }
-    await supabase
+    const { error: stockError } = await supabase
       .from("stock_levels")
       .upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
+    if (stockError) {
+      setNotice(`El producto se guardó, pero no se pudo registrar su stock: ${stockError.message}`);
+      await loadWorkspace();
+      return true;
+    }
     await logAudit(id ? "Editar producto" : "Crear producto", `${payload.name} (${payload.internal_code})`);
     setNotice("Producto guardado");
     await loadWorkspace();
+    return true;
   }
 
   // Crea varias variantes (talla x color) de un mismo producto base, de una sola vez.
@@ -1900,7 +1936,7 @@ export function App() {
 
   if (!supabase) return <LoginScreen message="Configura Supabase en .env.local para usar el sistema." />;
   if (loading) return <div className="loading-screen">Cargando sistema...</div>;
-  if (!session) return <AuthScreen onDone={() => void loadWorkspace()} />;
+  if (!session) return <AuthScreen />;
 
   return (
     <div className="app-shell">
@@ -2117,7 +2153,7 @@ export function App() {
   );
 }
 
-function AuthScreen({ onDone }: { onDone: () => void }) {
+function AuthScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -2131,7 +2167,6 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
       setError(loginError.message);
       return;
     }
-    onDone();
   }
 
   return (

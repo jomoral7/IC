@@ -1865,6 +1865,43 @@ td:last-child {
   color: var(--navy);
   box-shadow: 0 1px 3px rgba(11, 37, 51, 0.12);
 }
+.inv-date-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 40px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.inv-date-sort > span {
+  padding: 0 7px 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.inv-date-sort button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.inv-date-sort button.active {
+  background: var(--surface);
+  color: var(--navy);
+  box-shadow: 0 1px 3px rgba(11, 37, 51, 0.12);
+}
 .inv-filter-select {
   display: inline-flex;
   align-items: center;
@@ -5786,6 +5823,7 @@ td:last-child {
   }
 
   .inv-filters,
+  .inv-date-sort,
   .filterbar,
   .tab-row,
   .seller-tabs,
@@ -5798,6 +5836,7 @@ td:last-child {
   }
 
   .inv-filters button,
+  .inv-date-sort button,
   .filterbar button,
   .tab-row button,
   .seller-tabs button,
