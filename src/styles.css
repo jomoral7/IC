@@ -1219,6 +1219,21 @@ td:last-child {
   color: var(--navy);
   font-weight: 800;
 }
+.product-save-notice {
+  top: 20px;
+  border-color: #b9ddc8;
+  border-left-color: #168452;
+  background: #f4fcf7;
+}
+.product-save-notice.is-error {
+  border-color: #f1c2bd;
+  border-left-color: #c64536;
+  background: #fff7f5;
+  color: #8f2d24;
+}
+.product-save-notice.is-error button {
+  color: #9c3329;
+}
 
 .session-user {
   margin-top: 20px;

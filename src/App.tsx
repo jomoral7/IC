@@ -98,6 +98,7 @@ export function App() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const query = "";
   const [notice, setNotice] = useState("");
+  const [productSaveFeedback, setProductSaveFeedback] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [detailDoc, setDetailDoc] = useState<any | null>(null);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
   const [detailCommission, setDetailCommission] = useState<{ sellerName: string | null; amount: number } | null>(null);
@@ -151,6 +152,12 @@ export function App() {
     const timer = setTimeout(() => setNotice(""), 4500);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!productSaveFeedback) return;
+    const timer = setTimeout(() => setProductSaveFeedback(null), 6500);
+    return () => clearTimeout(timer);
+  }, [productSaveFeedback]);
 
   async function loadWorkspace(showLoader = false) {
     if (!supabase) return;
@@ -446,19 +453,19 @@ export function App() {
       ? await supabase.from("products").update(writePayload).eq("id", id).select("*").single()
       : await supabase.from("products").insert(writePayload).select("*").single();
     if (error) {
-      setNotice(error.message);
+      setProductSaveFeedback({ message: `No se pudo guardar el producto: ${error.message}`, tone: "error" });
       return false;
     }
     const { error: stockError } = await supabase
       .from("stock_levels")
       .upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
     if (stockError) {
-      setNotice(`El producto se guardó, pero no se pudo registrar su stock: ${stockError.message}`);
+      setProductSaveFeedback({ message: `El producto se guardó, pero no se pudo registrar su stock: ${stockError.message}`, tone: "error" });
       await loadWorkspace();
       return true;
     }
     await logAudit(id ? "Editar producto" : "Crear producto", `${payload.name} (${payload.internal_code})`);
-    setNotice("Producto guardado");
+    setProductSaveFeedback({ message: `Producto guardado correctamente · ${data.internal_code}`, tone: "success" });
     await loadWorkspace();
     return true;
   }
@@ -1997,6 +2004,12 @@ export function App() {
           <div className="notice">
             <span>{notice}</span>
             <button onClick={() => setNotice("")}>Cerrar</button>
+          </div>
+        )}
+        {productSaveFeedback && (
+          <div className={`notice product-save-notice ${productSaveFeedback.tone === "error" ? "is-error" : ""}`} role={productSaveFeedback.tone === "error" ? "alert" : "status"}>
+            <span>{productSaveFeedback.message}</span>
+            <button onClick={() => setProductSaveFeedback(null)}>Cerrar</button>
           </div>
         )}
         {currentRole === "admin" && selectedModule !== "POS" && (backupDaysAgo === null || backupDaysAgo >= 7) && (
