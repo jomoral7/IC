@@ -3456,6 +3456,14 @@ td:last-child {
   min-height: 46px;
   justify-content: center;
 }
+.field-help {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
 
 /* Materiales de empaque: activos internos consumidos por las ventas. */
 .packaging-summary {

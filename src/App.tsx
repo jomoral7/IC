@@ -456,13 +456,17 @@ export function App() {
       setProductSaveFeedback({ message: `No se pudo guardar el producto: ${error.message}`, tone: "error" });
       return false;
     }
-    const { error: stockError } = await supabase
-      .from("stock_levels")
-      .upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
-    if (stockError) {
-      setProductSaveFeedback({ message: `El producto se guardó, pero no se pudo registrar su stock: ${stockError.message}`, tone: "error" });
-      await loadWorkspace();
-      return true;
+    // El stock solo nace al crear la referencia. Las ediciones posteriores pasan
+    // por Ajuste, Compra, Venta o transferencia para no romper Kardex ni contabilidad.
+    if (!id) {
+      const { error: stockError } = await supabase
+        .from("stock_levels")
+        .upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
+      if (stockError) {
+        setProductSaveFeedback({ message: `El producto se guardó, pero no se pudo registrar su stock: ${stockError.message}`, tone: "error" });
+        await loadWorkspace();
+        return true;
+      }
     }
     if (!id && Number(form.stock) > 0) {
       const recorded = await recordInitialInventory({

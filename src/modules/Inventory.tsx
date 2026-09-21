@@ -1148,7 +1148,13 @@ function ProductDrawer({
             </label>
             <label>
               Stock {product ? "actual" : "inicial"}
-              <input type="number" value={form.stock} onChange={(event) => set("stock", Number(event.target.value))} />
+              <input
+                type="number"
+                value={form.stock}
+                readOnly={Boolean(product)}
+                onChange={(event) => set("stock", Number(event.target.value))}
+              />
+              {product && <small className="field-help">Usa Ajustar inventario para cambiar existencias.</small>}
             </label>
             <label>
               Minimo (alerta)
