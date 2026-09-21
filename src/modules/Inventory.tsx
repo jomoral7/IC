@@ -218,7 +218,6 @@ export function Inventory({
   registerPurchase,
   createOrder,
   stockRequests,
-  receiveOrder,
   receiveOrderQty,
   cancelOrder,
 }: {
@@ -235,11 +234,10 @@ export function Inventory({
   ) => Promise<void>;
   deleteProduct: (product: Product) => Promise<void>;
   registerAdjustment: (productId: string, quantityDelta: number, reason: string, notes: string) => Promise<void>;
-  registerPurchase: (supplierId: string | null, lines: PurchaseLine[]) => Promise<void>;
+  registerPurchase: (supplierId: string | null, lines: PurchaseLine[], paymentAccount?: "cash" | "bank") => Promise<void>;
   createOrder: (product: Product, quantity: number, supplierId: string | null) => Promise<void>;
   stockRequests: any[];
-  receiveOrder: (request: any) => Promise<void>;
-  receiveOrderQty: (request: any, arrivedQty: number, unitCost: number) => Promise<void>;
+  receiveOrderQty: (request: any, arrivedQty: number, unitCost: number, paymentAccount?: "cash" | "bank") => Promise<void>;
   cancelOrder: (request: any) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Product | null>(null);
@@ -254,7 +252,7 @@ export function Inventory({
   const [purchasing, setPurchasing] = useState(false);
   const [localQuery, setLocalQuery] = useState("");
   const [scanning, setScanning] = useState(false);
-  const [pedido, setPedido] = useState<Product | null>(null);
+  const [pedido, setPedido] = useState<{ product: Product; requestId?: string } | null>(null);
   const [matrixing, setMatrixing] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -463,7 +461,10 @@ export function Inventory({
             requests={stockRequests}
             products={products}
             suppliers={suppliers}
-            onReceive={receiveOrder}
+            onReceive={(request) => {
+              const product = products.find((entry) => entry.id === request.product_id);
+              if (product) setPedido({ product, requestId: request.id });
+            }}
             onCancel={cancelOrder}
           />
         ) : visible.length === 0 ? (
@@ -502,7 +503,7 @@ export function Inventory({
                           product={g.items[0]}
                           onEdit={() => setEditing(g.items[0])}
                           onAdjust={() => setAdjusting(g.items[0])}
-                          onPedido={() => setPedido(g.items[0])}
+                          onPedido={() => setPedido({ product: g.items[0] })}
                           onDelete={() => void deleteProduct(g.items[0])}
                         />
                       ) : (
@@ -516,7 +517,7 @@ export function Inventory({
                                 indent
                                 onEdit={() => setEditing(product)}
                                 onAdjust={() => setAdjusting(product)}
-                                onPedido={() => setPedido(product)}
+                                onPedido={() => setPedido({ product })}
                                 onDelete={() => void deleteProduct(product)}
                               />
                             ))}
@@ -529,7 +530,7 @@ export function Inventory({
                         product={product}
                         onEdit={() => setEditing(product)}
                         onAdjust={() => setAdjusting(product)}
-                        onPedido={() => setPedido(product)}
+                        onPedido={() => setPedido({ product })}
                         onDelete={() => void deleteProduct(product)}
                       />
                     ))}
@@ -566,12 +567,13 @@ export function Inventory({
       )}
       {pedido && (
         <PedidoModal
-          product={pedido}
+          product={pedido.product}
           suppliers={suppliers}
-          requests={stockRequests.filter((r) => r.product_id === pedido.id)}
+          requests={stockRequests.filter((r) => r.product_id === pedido.product.id)}
+          initialRequestId={pedido.requestId}
           onClose={() => setPedido(null)}
-          onOrder={(supplierId, qty) => createOrder(pedido, qty, supplierId)}
-          onReceiveManual={(supplierId, qty, unitCost) => registerPurchase(supplierId, [{ product: pedido, qty, unit_cost: unitCost }])}
+          onOrder={(supplierId, qty) => createOrder(pedido.product, qty, supplierId)}
+          onReceiveManual={(supplierId, qty, unitCost, paymentAccount) => registerPurchase(supplierId, [{ product: pedido.product, qty, unit_cost: unitCost }], paymentAccount)}
           onReceiveOrder={receiveOrderQty}
           onCancelOrder={cancelOrder}
         />
@@ -739,6 +741,7 @@ function PedidoModal({
   product,
   suppliers,
   requests,
+  initialRequestId,
   onClose,
   onOrder,
   onReceiveManual,
@@ -748,10 +751,11 @@ function PedidoModal({
   product: Product;
   suppliers: Party[];
   requests: any[];
+  initialRequestId?: string;
   onClose: () => void;
   onOrder: (supplierId: string | null, quantity: number) => Promise<void>;
-  onReceiveManual: (supplierId: string | null, quantity: number, unitCost: number) => Promise<void>;
-  onReceiveOrder: (request: any, arrivedQty: number, unitCost: number) => Promise<void>;
+  onReceiveManual: (supplierId: string | null, quantity: number, unitCost: number, paymentAccount: "cash" | "bank") => Promise<void>;
+  onReceiveOrder: (request: any, arrivedQty: number, unitCost: number, paymentAccount: "cash" | "bank") => Promise<void>;
   onCancelOrder: (request: any) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"order" | "receive">("order");
@@ -760,9 +764,12 @@ function PedidoModal({
   const [unitCost, setUnitCost] = useState(product.real_cost);
   const [saving, setSaving] = useState(false);
   // Recibir: pedido seleccionado ("manual" = entrada sin pedido)
-  const [selected, setSelected] = useState<string>(requests[0]?.id ?? "manual");
-  const [arrived, setArrived] = useState<number>(requests[0]?.requested_quantity ?? qty);
+  const [selected, setSelected] = useState<string>(initialRequestId ?? requests[0]?.id ?? "manual");
+  const initialRequest = requests.find((request) => request.id === (initialRequestId ?? requests[0]?.id));
+  const [arrived, setArrived] = useState<number>(Math.max(1, Number(initialRequest?.requested_quantity ?? qty) - Number(initialRequest?.received_quantity ?? 0)));
+  const [paymentAccount, setPaymentAccount] = useState<"cash" | "bank">("bank");
   const order = requests.find((r) => r.id === selected) ?? null;
+  const remaining = order ? Math.max(0, Number(order.requested_quantity) - Number(order.received_quantity ?? 0)) : 0;
 
   async function submitOrder() {
     if (qty <= 0 || saving) return;
@@ -774,15 +781,15 @@ function PedidoModal({
   async function submitReceive() {
     if (arrived <= 0 || saving) return;
     setSaving(true);
-    if (order) await onReceiveOrder(order, arrived, unitCost);
-    else await onReceiveManual(supplierId || null, arrived, unitCost);
+    if (order) await onReceiveOrder(order, arrived, unitCost, paymentAccount);
+    else await onReceiveManual(supplierId || null, arrived, unitCost, paymentAccount);
     setSaving(false);
     onClose();
   }
   function pickOrder(id: string) {
     setSelected(id);
     const r = requests.find((x) => x.id === id);
-    setArrived(r ? r.requested_quantity : suggestedRestock(product.stock, product.min_stock));
+    setArrived(r ? Math.max(1, Number(r.requested_quantity) - Number(r.received_quantity ?? 0)) : suggestedRestock(product.stock, product.min_stock));
   }
 
   return (
@@ -843,7 +850,7 @@ function PedidoModal({
               <select value={selected} onChange={(e) => pickOrder(e.target.value)}>
                 {requests.map((r) => (
                   <option key={r.id} value={r.id}>
-                    Pedido de {r.requested_quantity} uds
+                    Pedido: faltan {Math.max(0, Number(r.requested_quantity) - Number(r.received_quantity ?? 0))} de {r.requested_quantity} uds
                   </option>
                 ))}
                 <option value="manual">Entrada manual (sin pedido)</option>
@@ -852,10 +859,11 @@ function PedidoModal({
 
             <div className="form-grid one">
               {order && (
-                <label>
-                  Cantidad que se pidio
-                  <input type="number" value={order.requested_quantity} readOnly />
-                </label>
+                <div className="order-receipt-summary">
+                  <span>Solicitado <strong>{order.requested_quantity}</strong></span>
+                  <span>Ya recibido <strong>{Number(order.received_quantity ?? 0)}</strong></span>
+                  <span>Pendiente <strong>{remaining}</strong></span>
+                </div>
               )}
               {!order && (
                 <label>
@@ -872,16 +880,24 @@ function PedidoModal({
               )}
               <label>
                 Cantidad que llego
-                <input type="number" min={1} value={arrived} onChange={(e) => setArrived(Number(e.target.value))} />
+                <input type="number" min={1} max={order ? remaining : undefined} value={arrived} onChange={(e) => setArrived(Number(e.target.value))} />
               </label>
               <label>
                 Costo unitario
                 <input type="number" min={0} value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} />
               </label>
+              <label>
+                Se paga desde
+                <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value as "cash" | "bank")}>
+                  <option value="bank">Banco</option>
+                  <option value="cash">Caja</option>
+                </select>
+              </label>
             </div>
             <p className="adj-result">
               Nuevo stock: <strong>{product.stock + Math.max(0, arrived)}</strong> · Total: <strong>{lps(arrived * unitCost)}</strong>
             </p>
+            <p className="mini-note">El costo se promedia con las existencias actuales. Las ventas anteriores conservan su costo original.</p>
             <button className="primary-button wide" disabled={arrived <= 0 || saving} onClick={() => void submitReceive()}>
               <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada"}
             </button>
@@ -911,7 +927,7 @@ function OrdersView({
   requests: any[];
   products: Product[];
   suppliers: Party[];
-  onReceive: (request: any) => Promise<void>;
+  onReceive: (request: any) => void;
   onCancel: (request: any) => Promise<void>;
 }) {
   if (requests.length === 0) {
@@ -941,7 +957,7 @@ function OrdersView({
               <td className="num">
                 <strong>{r.requested_quantity}</strong>
               </td>
-              <td className="muted">{shortDate(r.created_at)}</td>
+              <td className="muted">{shortDate(r.requested_at)}</td>
               <td className="actions-col">
                 <div className="row-actions">
                   <button className="mini-button" title="Recibir (suma stock)" onClick={() => void onReceive(r)}>
@@ -1275,12 +1291,13 @@ function PurchaseModal({
   products: Product[];
   suppliers: Party[];
   onClose: () => void;
-  onSave: (supplierId: string | null, lines: PurchaseLine[]) => Promise<void>;
+  onSave: (supplierId: string | null, lines: PurchaseLine[], paymentAccount: "cash" | "bank") => Promise<void>;
 }) {
   const [supplierId, setSupplierId] = useState("");
   const [lines, setLines] = useState<PurchaseLine[]>([]);
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  const [paymentAccount, setPaymentAccount] = useState<"cash" | "bank">("bank");
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1312,7 +1329,7 @@ function PurchaseModal({
   async function submit() {
     if (!canSave) return;
     setSaving(true);
-    await onSave(supplierId || null, lines);
+    await onSave(supplierId || null, lines, paymentAccount);
     setSaving(false);
     onClose();
   }
@@ -1323,14 +1340,18 @@ function PurchaseModal({
         <div className="panel-heading">
           <div>
             <p className="section-label">Entrada de mercaderia</p>
-            <h2>Registrar pedido recibido</h2>
+            <h2>Registrar compra recibida</h2>
           </div>
           <button className="icon-button" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
 
-        <div className="form-section">
+        <div className="purchase-intro">
+          <strong>La entrada suma existencias y actualiza el costo promedio.</strong>
+          <span>Las ventas y facturas ya emitidas no cambian.</span>
+        </div>
+        <div className="form-section purchase-details-grid">
           <label>
             Proveedor
             <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
@@ -1340,6 +1361,13 @@ function PurchaseModal({
                   {supplier.name}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Se paga desde
+            <select value={paymentAccount} onChange={(event) => setPaymentAccount(event.target.value as "cash" | "bank")}>
+              <option value="bank">Banco</option>
+              <option value="cash">Caja</option>
             </select>
           </label>
 
@@ -1373,7 +1401,8 @@ function PurchaseModal({
                 <tr>
                   <th>Producto</th>
                   <th>Cant.</th>
-                  <th>Costo unit.</th>
+                  <th>Costo recibido</th>
+                  <th>Costo promedio nuevo</th>
                   <th>Subtotal</th>
                   <th></th>
                 </tr>
@@ -1401,6 +1430,12 @@ function PurchaseModal({
                         onChange={(event) => updateLine(line.product.id, { unit_cost: Number(event.target.value) })}
                       />
                     </td>
+                    <td>
+                      <strong className="purchase-cost">{lps((line.product.stock + line.qty) > 0
+                        ? ((line.product.stock * line.product.real_cost) + (line.qty * line.unit_cost)) / (line.product.stock + line.qty)
+                        : line.unit_cost)}</strong>
+                      <span className="purchase-cost-note">antes {lps(line.product.real_cost)}</span>
+                    </td>
                     <td>{lps(line.qty * line.unit_cost)}</td>
                     <td>
                       <button className="icon-button" onClick={() => removeLine(line.product.id)}>
@@ -1414,9 +1449,9 @@ function PurchaseModal({
           )}
         </div>
 
-        <div className="total-box">
-          <span>Total compra</span>
-          <strong>{lps(total)}</strong>
+        <div className="total-box purchase-total-box">
+          <div><span>Total compra</span><strong>{lps(total)}</strong></div>
+          <small>Se registrará contra {paymentAccount === "bank" ? "Banco" : "Caja"}.</small>
         </div>
         <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
           <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada y sumar stock"}

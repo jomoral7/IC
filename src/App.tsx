@@ -194,7 +194,7 @@ export function App() {
         supabase.from("inventory_kardex").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("profiles").select("id, full_name, username, role, active").order("full_name"),
         supabase.from("sellers").select("id, name, code, phone, commission_rate, active, user_id").order("name"),
-        supabase.from("stock_requests").select("id, product_id, requested_quantity, status, supplier_id, created_at"),
+        supabase.from("stock_requests").select("id, product_id, requested_quantity, received_quantity, status, supplier_id, requested_at, received_at, notes"),
         supabase
           .from("seller_commissions")
           .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, subtotal, discount, total, created_at, document_items(discount))")
@@ -225,10 +225,11 @@ export function App() {
     // Stock total + desglose por sucursal.
     const byLocation = new Map<string, Record<string, number>>();
     const totals = new Map<string, number>();
-    const pendingRequests = (requestRes.data ?? []).filter((r: any) => r.status === "pending" || r.status === "ordered");
+    const pendingRequests = (requestRes.data ?? []).filter((r: any) => r.status === "pending" || r.status === "ordered" || r.status === "partial");
     const incomingByProduct = new Map<string, number>();
     for (const r of pendingRequests) {
-      incomingByProduct.set(r.product_id, (incomingByProduct.get(r.product_id) ?? 0) + Number(r.requested_quantity ?? 0));
+      const pendingQty = Math.max(0, Number(r.requested_quantity ?? 0) - Number(r.received_quantity ?? 0));
+      incomingByProduct.set(r.product_id, (incomingByProduct.get(r.product_id) ?? 0) + pendingQty);
     }
     for (const row of stockRes.data ?? []) {
       const qty = Number(row.quantity ?? 0);
@@ -810,7 +811,7 @@ export function App() {
     await loadWorkspace();
   }
 
-  async function registerPurchase(supplierId: string | null, lines: PurchaseLine[]) {
+  async function registerPurchase(supplierId: string | null, lines: PurchaseLine[], paymentAccount: "cash" | "bank" = "bank") {
     if (!supabase || lines.length === 0) return;
     const location = await ensureLocation();
     const subtotal = lines.reduce((sum, line) => sum + line.qty * line.unit_cost, 0);
@@ -845,10 +846,20 @@ export function App() {
       })),
     );
     for (const line of lines) {
-      const nextQty = line.product.stock + line.qty;
+      const nextStockAtLocation = Number(line.product.stockByLocation[location.id] ?? 0) + line.qty;
+      const totalStockAfterReceipt = line.product.stock + line.qty;
+      const weightedCost = totalStockAfterReceipt > 0
+        ? Number((((line.product.stock * line.product.real_cost) + (line.qty * line.unit_cost)) / totalStockAfterReceipt).toFixed(2))
+        : line.unit_cost;
       await supabase
         .from("stock_levels")
-        .upsert({ product_id: line.product.id, location_id: location.id, quantity: nextQty });
+        .upsert({ product_id: line.product.id, location_id: location.id, quantity: nextStockAtLocation });
+      // El costo promedio aplica desde esta recepcion hacia adelante. Las facturas anteriores
+      // conservan el unit_cost guardado en sus propios renglones.
+      await supabase
+        .from("products")
+        .update({ real_cost: weightedCost, cost: weightedCost, supplier_id: supplierId ?? line.product.supplier_id ?? null })
+        .eq("id", line.product.id);
       await supabase.from("inventory_movements").insert({
         product_id: line.product.id,
         location_id: location.id,
@@ -860,20 +871,12 @@ export function App() {
         notes: `Entrada pedido ${document.document_number}`,
       });
     }
-    // Marcar como recibidos los pedidos pendientes de estos productos (ya no van "en camino").
-    for (const line of lines) {
-      await supabase
-        .from("stock_requests")
-        .update({ status: "received", received_at: new Date().toISOString() })
-        .eq("product_id", line.product.id)
-        .in("status", ["pending", "ordered"]);
-    }
     // La entrada fisica tambien debe aumentar el activo Inventario.
     await postJournal(new Date(document.created_at).toISOString().slice(0, 10), `Compra ${document.document_number}`, "purchase", document.id, [
       { account_id: accountIdByKey("inventory"), debit: subtotal, credit: 0, description: "Entrada de inventario" },
-      { account_id: accountIdByKey("cash"), debit: 0, credit: subtotal, description: "Pago compra" },
+      { account_id: accountIdByKey(paymentAccount), debit: 0, credit: subtotal, description: `Pago compra desde ${paymentAccount === "bank" ? "Banco" : "Caja"}` },
     ]);
-    setNotice(`Entrada ${document.document_number} registrada · +${lines.reduce((s, l) => s + l.qty, 0)} unidades`);
+    setNotice(`Entrada ${document.document_number} registrada · +${lines.reduce((s, l) => s + l.qty, 0)} unidades · costo promedio actualizado`);
     await loadWorkspace();
   }
 
@@ -992,15 +995,6 @@ export function App() {
     await loadWorkspace();
   }
 
-  async function receiveOrder(request: any) {
-    if (!supabase) return;
-    const product = products.find((p) => p.id === request.product_id);
-    if (!product) return;
-    const qty = Number(request.requested_quantity);
-    // Reutiliza la entrada de compra (suma stock, movimiento y marca pedidos recibidos).
-    await registerPurchase(request.supplier_id ?? null, [{ product, qty, unit_cost: product.real_cost }]);
-  }
-
   async function cancelOrder(request: any) {
     if (!supabase) return;
     const { error } = await supabase.from("stock_requests").update({ status: "cancelled" }).eq("id", request.id);
@@ -1008,11 +1002,16 @@ export function App() {
     await loadWorkspace();
   }
 
-  async function receiveOrderQty(request: any, arrivedQty: number, unitCost: number) {
+  async function receiveOrderQty(request: any, arrivedQty: number, unitCost: number, paymentAccount: "cash" | "bank" = "bank") {
     if (!supabase || arrivedQty <= 0) return;
     const product = products.find((p) => p.id === request.product_id);
     if (!product) return;
     const location = await ensureLocation();
+    const remainingQty = Math.max(0, Number(request.requested_quantity) - Number(request.received_quantity ?? 0));
+    if (arrivedQty > remainingQty) {
+      setNotice(`Solo faltan ${remainingQty} unidades por recibir de este pedido.`);
+      return;
+    }
     const total = arrivedQty * unitCost;
     const documentNumber = String(Date.now()).slice(-6);
     const { data: document, error } = await supabase
@@ -1042,7 +1041,13 @@ export function App() {
       unit_price: product.sale_price,
       line_total: total,
     });
-    await supabase.from("stock_levels").upsert({ product_id: product.id, location_id: location.id, quantity: product.stock + arrivedQty });
+    const nextStockAtLocation = Number(product.stockByLocation[location.id] ?? 0) + arrivedQty;
+    const totalStockAfterReceipt = product.stock + arrivedQty;
+    const weightedCost = totalStockAfterReceipt > 0
+      ? Number((((product.stock * product.real_cost) + (arrivedQty * unitCost)) / totalStockAfterReceipt).toFixed(2))
+      : unitCost;
+    await supabase.from("stock_levels").upsert({ product_id: product.id, location_id: location.id, quantity: nextStockAtLocation });
+    await supabase.from("products").update({ real_cost: weightedCost, cost: weightedCost }).eq("id", product.id);
     await supabase.from("inventory_movements").insert({
       product_id: product.id,
       location_id: location.id,
@@ -1053,11 +1058,16 @@ export function App() {
       unit_price: product.sale_price,
       notes: `Recibido pedido ${document.document_number}`,
     });
-    await supabase.from("stock_requests").update({ status: "received", received_at: new Date().toISOString() }).eq("id", request.id);
-    // Una recepcion parcial tambien es una compra: inventario sube y Caja registra el pago.
+    const receivedQuantity = Number(request.received_quantity ?? 0) + arrivedQty;
+    await supabase.from("stock_requests").update({
+      received_quantity: receivedQuantity,
+      status: receivedQuantity >= Number(request.requested_quantity) ? "received" : "partial",
+      received_at: new Date().toISOString(),
+    }).eq("id", request.id);
+    // Una recepcion parcial tambien es una compra: inventario sube y la cuenta elegida registra el pago.
     await postJournal(new Date(document.created_at).toISOString().slice(0, 10), `Compra ${document.document_number}`, "purchase", document.id, [
       { account_id: accountIdByKey("inventory"), debit: total, credit: 0, description: "Entrada de inventario" },
-      { account_id: accountIdByKey("cash"), debit: 0, credit: total, description: "Pago compra" },
+      { account_id: accountIdByKey(paymentAccount), debit: 0, credit: total, description: `Pago compra desde ${paymentAccount === "bank" ? "Banco" : "Caja"}` },
     ]);
     setNotice(`Recibido: +${arrivedQty} unidades`);
     await loadWorkspace();
@@ -2151,7 +2161,6 @@ export function App() {
             registerPurchase={registerPurchase}
             createOrder={createOrder}
             stockRequests={stockRequests}
-            receiveOrder={receiveOrder}
             receiveOrderQty={receiveOrderQty}
             cancelOrder={cancelOrder}
           />

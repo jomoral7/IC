@@ -228,7 +228,8 @@ export type StockRequest = {
   min_quantity: number;
   current_quantity: number;
   requested_quantity: number;
-  status: "pending" | "ordered" | "received" | "cancelled";
+  received_quantity: number;
+  status: "pending" | "ordered" | "partial" | "received" | "cancelled";
   supplier_id: string | null;
   notes: string | null;
 };
