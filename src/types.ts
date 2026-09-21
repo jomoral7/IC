@@ -221,6 +221,20 @@ export type PackagingMaterialForm = {
 /** Consumo interno de empaque asociado a una venta, invisible para el cliente. */
 export type PackagingUsage = { material_id: string; quantity: number };
 
+/** Pedido de reabastecimiento interno para bolsas, cajas, etiquetas y otros insumos. */
+export type PackagingStockRequest = {
+  id: string;
+  material_id: string;
+  location_id: string | null;
+  requested_quantity: number;
+  received_quantity: number;
+  status: "pending" | "ordered" | "partial" | "received" | "cancelled";
+  supplier_id: string | null;
+  requested_at: string;
+  received_at: string | null;
+  notes: string | null;
+};
+
 export type StockRequest = {
   id: string;
   product_id: string;

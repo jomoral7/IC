@@ -23,7 +23,7 @@ import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
 import { supabase } from "./lib/supabase";
-import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, PackagingMaterial, PackagingMaterialForm, PackagingUsage, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
+import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, PackagingMaterial, PackagingMaterialForm, PackagingStockRequest, PackagingUsage, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
 import { BrandMark, LoginScreen, roleLabel } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
 import { POS, type POSInvoicePreview } from "./modules/Pos";
@@ -95,6 +95,7 @@ export function App() {
   const [backupDaysAgo, setBackupDaysAgo] = useState<number | null>(null);
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterial[]>([]);
+  const [packagingRequests, setPackagingRequests] = useState<PackagingStockRequest[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const query = "";
   const [notice, setNotice] = useState("");
@@ -183,7 +184,7 @@ export function App() {
       }
     }
 
-    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes, packagingRes, packagingStockRes] =
+    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes, packagingRes, packagingStockRes, packagingRequestRes] =
       await Promise.all([
         loadAllProducts(),
         supabase.from("stock_levels").select("product_id, quantity, location_id").limit(20000),
@@ -217,6 +218,7 @@ export function App() {
         supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300),
         supabase.from("packaging_materials").select("*").eq("active", true).order("name"),
         supabase.from("packaging_stock_levels").select("material_id, quantity, location_id"),
+        supabase.from("packaging_stock_requests").select("id, material_id, location_id, requested_quantity, received_quantity, status, supplier_id, requested_at, received_at, notes").in("status", ["pending", "ordered", "partial"]).order("requested_at", { ascending: false }),
       ]);
 
     if (productRes.error) setNotice(productRes.error.message);
@@ -269,6 +271,7 @@ export function App() {
       min_stock: Number(material.min_stock ?? 0),
       unit_cost: Number(material.unit_cost ?? 0),
     })) as PackagingMaterial[]);
+    setPackagingRequests((packagingRequestRes.data ?? []) as PackagingStockRequest[]);
     setSuppliers((supplierRes.data ?? []) as Party[]);
     setCustomers((customerRes.data ?? []) as Party[]);
     setLocations((locationRes.data ?? []) as Location[]);
@@ -953,6 +956,86 @@ export function App() {
     await logAudit("Compra de empaque", `${material.name} · +${quantity} ${material.unit} · ${paymentAccount === "bank" ? "Banco" : "Caja"}`);
     setNotice(`Compra registrada · +${quantity} ${material.unit}${quantity !== 1 ? "es" : ""}`);
     await loadWorkspace();
+  }
+
+  async function createPackagingOrder(material: PackagingMaterial, quantity: number, supplierId: string | null) {
+    if (!supabase || quantity <= 0) return;
+    const location = await ensureLocation();
+    const { error } = await supabase.from("packaging_stock_requests").insert({
+      material_id: material.id,
+      location_id: location.id,
+      requested_quantity: quantity,
+      received_quantity: 0,
+      supplier_id: supplierId,
+      status: "ordered",
+    });
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    await logAudit("Pedido de empaque", `${material.name} · ${quantity} ${material.unit}`);
+    setNotice(`Pedido registrado · ${quantity} ${material.unit}${quantity !== 1 ? "es" : ""} en camino`);
+    await loadWorkspace();
+  }
+
+  async function receivePackagingOrder(
+    request: PackagingStockRequest,
+    quantity: number,
+    unitCost: number,
+    paymentAccount: "cash" | "bank",
+  ) {
+    if (!supabase || quantity <= 0 || unitCost < 0) return;
+    const material = packagingMaterials.find((entry) => entry.id === request.material_id);
+    if (!material) {
+      setNotice("El material de este pedido ya no está disponible.");
+      return;
+    }
+    const remaining = Math.max(0, request.requested_quantity - request.received_quantity);
+    if (quantity > remaining) {
+      setNotice(`Solo faltan ${remaining} ${material.unit}${remaining !== 1 ? "es" : ""} por recibir.`);
+      return;
+    }
+    const location = await ensureLocation();
+    const total = Number((quantity * unitCost).toFixed(2));
+    const currentAtLocation = Number(material.stockByLocation[location.id] ?? 0);
+    const { error: stockError } = await supabase
+      .from("packaging_stock_levels")
+      .upsert({ material_id: material.id, location_id: location.id, quantity: currentAtLocation + quantity });
+    if (stockError) {
+      setNotice(stockError.message);
+      return;
+    }
+    // En empaque rige el costo vigente de la última compra; cada consumo ya guarda su unit_cost histórico.
+    await supabase.from("packaging_materials").update({ unit_cost: unitCost, updated_at: new Date().toISOString() }).eq("id", material.id);
+    await supabase.from("packaging_movements").insert({
+      material_id: material.id,
+      location_id: location.id,
+      movement_type: "purchase",
+      quantity,
+      unit_cost: unitCost,
+      notes: `Recepción pedido de ${material.kind.toLowerCase()} · pagada desde ${paymentAccount === "bank" ? "Banco" : "Caja"}`,
+      created_by: session?.user?.id ?? null,
+    });
+    const receivedQuantity = request.received_quantity + quantity;
+    await supabase.from("packaging_stock_requests").update({
+      received_quantity: receivedQuantity,
+      status: receivedQuantity >= request.requested_quantity ? "received" : "partial",
+      received_at: new Date().toISOString(),
+    }).eq("id", request.id);
+    await postJournal(new Date().toISOString().slice(0, 10), `Compra empaque ${material.internal_code}`, "purchase", null, [
+      { account_id: accountIdByKey("packaging_inventory"), debit: total, credit: 0, description: `Entrada ${material.name}` },
+      { account_id: accountIdByKey(paymentAccount), debit: 0, credit: total, description: "Pago compra empaque" },
+    ]);
+    await logAudit("Recepción empaque", `${material.name} · +${quantity} ${material.unit} · costo vigente ${unitCost}`);
+    setNotice(`Recepción registrada · +${quantity} ${material.unit}${quantity !== 1 ? "es" : ""}`);
+    await loadWorkspace();
+  }
+
+  async function cancelPackagingOrder(request: PackagingStockRequest) {
+    if (!supabase) return;
+    const { error } = await supabase.from("packaging_stock_requests").update({ status: "cancelled" }).eq("id", request.id);
+    setNotice(error ? error.message : "Pedido de empaque cancelado");
+    if (!error) await loadWorkspace();
   }
 
   /** Un material con historial se desactiva; borrar sus movimientos rompería la auditoría contable. */
@@ -2168,8 +2251,12 @@ export function App() {
         {selectedModule === "Empaque" && (
           <Packaging
             materials={packagingMaterials}
+            requests={packagingRequests}
+            suppliers={suppliers}
             saveMaterial={savePackagingMaterial}
-            registerPurchase={registerPackagingPurchase}
+            createOrder={createPackagingOrder}
+            receiveOrder={receivePackagingOrder}
+            cancelOrder={cancelPackagingOrder}
             deleteMaterial={deletePackagingMaterial}
           />
         )}

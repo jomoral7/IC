@@ -2330,6 +2330,10 @@ td:last-child {
   .order-receipt-summary {
     grid-template-columns: 1fr;
   }
+  .packaging-order-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .inv-summary {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -3601,6 +3605,11 @@ td:last-child {
 .packaging-card-actions .secondary-button { flex: 1; justify-content: center; }
 .packaging-card-actions .packaging-delete { color: var(--coral); }
 .packaging-card-actions .packaging-delete:hover { border-color: #f0c4bd; background: #fff4f2; }
+.packaging-orders { display: grid; gap: 10px; }
+.packaging-order-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px; border: 1px solid var(--line); background: var(--surface); }
+.packaging-order-row strong, .packaging-order-row span { display: block; }
+.packaging-order-row strong { color: var(--navy); }
+.packaging-order-row span { margin-top: 4px; color: var(--muted); font-size: 13px; }
 .material-drawer {
   width: min(820px, calc(100vw - 48px));
   display: grid;
