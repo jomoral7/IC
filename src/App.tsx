@@ -464,6 +464,22 @@ export function App() {
       await loadWorkspace();
       return true;
     }
+    if (!id && Number(form.stock) > 0) {
+      const recorded = await recordInitialInventory({
+        productId: data.id,
+        code: data.internal_code ?? generatedCode,
+        quantity: Number(form.stock),
+        unitCost: Number(payload.real_cost),
+        unitPrice: Number(payload.sale_price),
+        locationId: location.id,
+        entryDate: new Date(data.created_at ?? now).toISOString().slice(0, 10),
+      });
+      if (!recorded) {
+        setProductSaveFeedback({ message: "El producto se guardó, pero no se pudo registrar su entrada contable inicial. No lo vendas hasta revisar Contabilidad.", tone: "error" });
+        await loadWorkspace();
+        return true;
+      }
+    }
     await logAudit(id ? "Editar producto" : "Crear producto", `${payload.name} (${payload.internal_code})`);
     setProductSaveFeedback({ message: `Producto guardado correctamente · ${data.internal_code}`, tone: "success" });
     await loadWorkspace();
@@ -519,7 +535,26 @@ export function App() {
         setNotice(`Error creando ${base.name} ${combo.size}/${combo.color}: ${error.message}`);
         continue;
       }
-      await supabase.from("stock_levels").upsert({ product_id: data.id, location_id: location.id, quantity: Number(combo.qty) });
+      const { error: stockError } = await supabase.from("stock_levels").upsert({ product_id: data.id, location_id: location.id, quantity: Number(combo.qty) });
+      if (stockError) {
+        setNotice(`La variante ${code} se creó, pero no se pudo registrar su stock: ${stockError.message}`);
+        continue;
+      }
+      if (Number(combo.qty) > 0) {
+        const recorded = await recordInitialInventory({
+          productId: data.id,
+          code,
+          quantity: Number(combo.qty),
+          unitCost: Number(base.real_cost),
+          unitPrice: Number(base.sale_price),
+          locationId: location.id,
+          entryDate: new Date().toISOString().slice(0, 10),
+        });
+        if (!recorded) {
+          setNotice(`La variante ${code} se creó, pero no se pudo registrar su entrada contable inicial.`);
+          continue;
+        }
+      }
       created++;
     }
     await logAudit("Crear variantes", `${created} variante(s) de "${base.name}"`);
@@ -1063,15 +1098,15 @@ export function App() {
     source: string,
     sourceId: string | null,
     lines: { account_id: string | null; debit: number; credit: number; description?: string }[],
-  ) {
-    if (!supabase) return;
+  ): Promise<boolean> {
+    if (!supabase) return false;
     const clean = lines.filter((l) => l.account_id && (l.debit > 0 || l.credit > 0)) as {
       account_id: string;
       debit: number;
       credit: number;
       description?: string;
     }[];
-    if (clean.length < 2) return; // sin cuentas suficientes no se postea (no romper la venta)
+    if (clean.length < 2) return false; // sin cuentas suficientes no se postea (no romper la venta)
     const { error } = await supabase.rpc("post_journal_entry", {
       p_entry_date: entryDate,
       p_memo: memo,
@@ -1079,7 +1114,51 @@ export function App() {
       p_source_id: sourceId,
       p_lines: clean,
     });
-    if (error) console.warn("No se pudo postear asiento:", error.message);
+    if (error) {
+      console.warn("No se pudo postear asiento:", error.message);
+      return false;
+    }
+    return true;
+  }
+
+  /** Alta de existencias al crear una referencia: Inventario contra Capital, como la carga de Excel. */
+  async function recordInitialInventory({
+    productId,
+    code,
+    quantity,
+    unitCost,
+    unitPrice,
+    locationId,
+    entryDate,
+  }: {
+    productId: string;
+    code: string;
+    quantity: number;
+    unitCost: number;
+    unitPrice: number;
+    locationId: string;
+    entryDate: string;
+  }): Promise<boolean> {
+    if (!supabase || quantity <= 0) return true;
+    const { error: movementError } = await supabase.from("inventory_movements").insert({
+      product_id: productId,
+      location_id: locationId,
+      movement_type: "adjustment_in",
+      quantity,
+      unit_cost: unitCost,
+      unit_price: unitPrice,
+      notes: "Inventario inicial al crear producto",
+    });
+    if (movementError) {
+      console.warn("No se pudo registrar el movimiento inicial:", movementError.message);
+      return false;
+    }
+    const total = quantity * unitCost;
+    if (total <= 0) return true;
+    return postJournal(entryDate, `Inventario inicial ${code}`, "manual", null, [
+      { account_id: accountIdByKey("inventory"), debit: total, credit: 0, description: "Inventario inicial" },
+      { account_id: accountIdByKey("capital"), debit: 0, credit: total, description: "Capital inicial" },
+    ]);
   }
 
   async function issueSale(
