@@ -488,7 +488,6 @@ export function Accounting({
                           className="icon-action danger"
                           type="button"
                           onClick={() => removeManualLine(line.id)}
-                          disabled={manualEntry.lines.length <= 2}
                           aria-label={`Eliminar línea ${index + 1}`}
                           title="Eliminar línea"
                         >
