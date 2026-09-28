@@ -398,10 +398,11 @@ export function App() {
   }
 
   // Registra la huella de quien hace cada accion importante (via funcion segura en la base).
-  async function logAudit(action: string, detail: string) {
-    if (!supabase) return;
+  async function logAudit(action: string, detail: string): Promise<{ error: Error | null }> {
+    if (!supabase) return { error: new Error("No hay conexión con la base de datos.") };
     const { error } = await supabase.rpc("log_action", { p_action: action, p_detail: detail });
     if (error) console.warn("No se pudo registrar en bitacora:", error.message);
+    return { error: error ? new Error(error.message) : null };
   }
 
   async function ensureLocation() {
@@ -2080,6 +2081,35 @@ export function App() {
     await loadWorkspace();
   }
 
+  async function registerJournalEntry(f: {
+    entry_date: string;
+    memo: string;
+    lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
+  }): Promise<boolean> {
+    if (!supabase) {
+      setNotice("No hay conexión con la base de datos.");
+      return false;
+    }
+    const totalDebit = f.lines.reduce((sum, line) => sum + line.debit, 0);
+    const { error } = await supabase.rpc("post_journal_entry", {
+      p_entry_date: f.entry_date,
+      p_memo: f.memo,
+      p_source: "manual_entry",
+      p_source_id: null,
+      p_lines: f.lines,
+    });
+    if (error) {
+      console.warn("No se pudo registrar la partida manual:", error.message);
+      setNotice(`No se pudo registrar la partida: ${error.message}`);
+      return false;
+    }
+    const { error: auditError } = await logAudit("Partida manual", `${f.memo} · ${f.lines.length} líneas · L ${totalDebit.toLocaleString("es-HN", { minimumFractionDigits: 2 })}`);
+    if (auditError) console.warn("La partida se guardó, pero no se pudo registrar en auditoría:", auditError.message);
+    setNotice("Partida manual registrada");
+    await loadWorkspace();
+    return true;
+  }
+
   async function saveAccount(f: { code: string; name: string; type: AccountType }) {
     if (!supabase) return;
     const normalSide = f.type === "asset" || f.type === "expense" ? "debit" : "credit";
@@ -2263,7 +2293,14 @@ export function App() {
         {selectedModule === "Facturas" && <Invoices documents={documents} onDownload={downloadInvoice} onOpen={openInvoiceDetail} />}
         {selectedModule === "Kardex" && <Kardex rows={kardex} products={products} />}
         {selectedModule === "Contabilidad" && (
-          <Accounting accounts={accounts} movements={movements} journal={journal} registerMovement={registerMovement} saveAccount={saveAccount} />
+          <Accounting
+            accounts={accounts}
+            movements={movements}
+            journal={journal}
+            registerMovement={registerMovement}
+            registerJournalEntry={registerJournalEntry}
+            saveAccount={saveAccount}
+          />
         )}
         {selectedModule === "Analisis" && <Analytics products={products} sales={salesLines} />}
         {selectedModule === "Etiquetas" && <Labels products={products} />}

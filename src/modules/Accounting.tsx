@@ -1,5 +1,5 @@
 import { Plus, Save, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Account, AccountType, CashMovement, JournalEntryFull } from "../types";
 import { ACCOUNT_TYPE_LABEL } from "../types";
 import { lps, shortDate } from "../lib/format";
@@ -12,6 +12,7 @@ const SOURCE_LABEL: Record<string, string> = {
   expense: "Gasto",
   income: "Ingreso",
   manual: "Manual",
+  manual_entry: "Partida manual",
 };
 
 type MovementForm = {
@@ -23,19 +24,55 @@ type MovementForm = {
   memo: string;
 };
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+type ManualJournalLine = {
+  id: number;
+  account_id: string;
+  account_search: string;
+  debit: string;
+  credit: string;
+};
+
+type ManualJournalDraft = {
+  entry_date: string;
+  memo: string;
+  lines: ManualJournalLine[];
+};
+
+type ManualJournalForm = {
+  entry_date: string;
+  memo: string;
+  lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
+};
+
+const todayStr = () => {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
+const emptyJournalLine = (id: number): ManualJournalLine => ({ id, account_id: "", account_search: "", debit: "", credit: "" });
+const emptyManualJournal = (): ManualJournalDraft => ({
+  entry_date: todayStr(),
+  memo: "",
+  lines: [emptyJournalLine(1), emptyJournalLine(2)],
+});
+const cents = (value: string) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+};
 
 export function Accounting({
   accounts,
   movements,
   journal,
   registerMovement,
+  registerJournalEntry,
   saveAccount,
 }: {
   accounts: Account[];
   movements: CashMovement[];
   journal: JournalEntryFull[];
   registerMovement: (form: MovementForm) => Promise<void>;
+  registerJournalEntry: (form: ManualJournalForm) => Promise<boolean>;
   saveAccount: (form: { code: string; name: string; type: AccountType }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<
@@ -43,6 +80,12 @@ export function Accounting({
   >("movimientos");
   const [open, setOpen] = useState(false);
   const [newType, setNewType] = useState<"expense" | "income">("expense");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualError, setManualError] = useState("");
+  const [manualEntry, setManualEntry] = useState<ManualJournalDraft>(emptyManualJournal);
+  const nextManualLineId = useRef(2);
+  const manualAccountListId = useRef(`manual-journal-account-options-${Math.random().toString(36).slice(2)}`);
 
   // Cuentas de pago (donde entra/sale la plata): caja y banco.
   const payAccounts = useMemo(
@@ -53,6 +96,12 @@ export function Accounting({
   const categories = useMemo(
     () => accounts.filter((a) => a.is_postable && a.type === (newType === "expense" ? "expense" : "income")),
     [accounts, newType],
+  );
+  const journalAccounts = useMemo(
+    () => accounts
+      .filter((account) => account.active && account.is_postable)
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
+    [accounts],
   );
 
   const defaultForm = (): MovementForm => ({
@@ -85,6 +134,100 @@ export function Accounting({
     setOpen(false);
   }
 
+  const manualDraftLines = manualEntry.lines.map((line) => ({
+    ...line,
+    debitCents: cents(line.debit),
+    creditCents: cents(line.credit),
+  }));
+  const manualTouchedLines = manualDraftLines.filter(
+    (line) => line.account_search.trim() || line.debit.trim() || line.credit.trim(),
+  );
+  const manualInvalidLine = manualTouchedLines.some((line) =>
+    !line.account_id ||
+    (line.debitCents <= 0 && line.creditCents <= 0) ||
+    (line.debitCents > 0 && line.creditCents > 0),
+  );
+  const validManualLines = manualTouchedLines.filter((line) =>
+    line.account_id && ((line.debitCents > 0 && line.creditCents === 0) || (line.creditCents > 0 && line.debitCents === 0)),
+  );
+  const manualDebitCents = validManualLines.reduce((sum, line) => sum + line.debitCents, 0);
+  const manualCreditCents = validManualLines.reduce((sum, line) => sum + line.creditCents, 0);
+  const manualBalanced =
+    !manualInvalidLine &&
+    validManualLines.length >= 2 &&
+    manualDebitCents > 0 &&
+    manualDebitCents === manualCreditCents;
+
+  function openManualJournal() {
+    nextManualLineId.current = 2;
+    setManualEntry(emptyManualJournal());
+    setManualError("");
+    setManualOpen(true);
+  }
+
+  function updateManualAccount(id: number, value: string) {
+    const selectedAccount = journalAccounts.find((account) =>
+      `${account.code} · ${account.name} — ${ACCOUNT_TYPE_LABEL[account.type]}` === value,
+    );
+    setManualEntry((current) => ({
+      ...current,
+      lines: current.lines.map((line) => line.id === id
+        ? { ...line, account_search: value, account_id: selectedAccount?.id ?? "" }
+        : line),
+    }));
+    setManualError("");
+  }
+
+  function updateManualLine(id: number, field: "debit" | "credit", value: string) {
+    setManualEntry((current) => ({
+      ...current,
+      lines: current.lines.map((line) => {
+        if (line.id !== id) return line;
+        if (field === "debit") return { ...line, debit: value, credit: Number(value) > 0 ? "" : line.credit };
+        return { ...line, credit: value, debit: Number(value) > 0 ? "" : line.debit };
+      }),
+    }));
+    setManualError("");
+  }
+
+  function addManualLine() {
+    nextManualLineId.current += 1;
+    setManualEntry((current) => ({ ...current, lines: [...current.lines, emptyJournalLine(nextManualLineId.current)] }));
+  }
+
+  function removeManualLine(id: number) {
+    setManualEntry((current) => ({ ...current, lines: current.lines.filter((line) => line.id !== id) }));
+    setManualError("");
+  }
+
+  async function submitManualJournal() {
+    if (!manualBalanced || !manualEntry.entry_date || !manualEntry.memo.trim() || manualSaving) return;
+    setManualSaving(true);
+    setManualError("");
+    try {
+      const saved = await registerJournalEntry({
+        entry_date: manualEntry.entry_date,
+        memo: manualEntry.memo.trim(),
+        lines: validManualLines.map((line) => ({
+          account_id: line.account_id,
+          debit: line.debitCents / 100,
+          credit: line.creditCents / 100,
+          description: manualEntry.memo.trim(),
+        })),
+      });
+      if (saved) {
+        setManualOpen(false);
+        setManualEntry(emptyManualJournal());
+      } else {
+        setManualError("No se pudo guardar la partida. Revisa la conexión e inténtalo de nuevo.");
+      }
+    } catch {
+      setManualError("No se pudo guardar la partida. Revisa la conexión e inténtalo de nuevo.");
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
   const totalIngresos = movements.filter((m) => m.type === "income").reduce((s, m) => s + m.amount, 0);
   const totalGastos = movements.filter((m) => m.type === "expense").reduce((s, m) => s + m.amount, 0);
   const balance = totalIngresos - totalGastos;
@@ -97,6 +240,9 @@ export function Accounting({
           <h2>Gastos e ingresos</h2>
         </div>
         <div className="acc-actions">
+          <button className="secondary-button" onClick={openManualJournal}>
+            <Plus size={16} /> Partida manual
+          </button>
           <button className="primary-button" onClick={() => openFor("income")}>
             <Plus size={16} /> Ingreso
           </button>
@@ -183,7 +329,7 @@ export function Accounting({
 
       {open && (
         <div className="drawer-backdrop">
-          <aside className="drawer small-drawer">
+          <aside className="drawer small-drawer accounting-movement-drawer">
             <div className="panel-heading">
               <div>
                 <p className="section-label">Nuevo registro</p>
@@ -193,7 +339,7 @@ export function Accounting({
                 <X size={18} />
               </button>
             </div>
-            <div className="form-grid one">
+            <div className="form-grid one accounting-movement-body">
               <label>
                 Fecha
                 <input type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} />
@@ -236,13 +382,161 @@ export function Accounting({
                 />
               </label>
             </div>
-            <button
-              className="primary-button wide"
-              disabled={!form.amount || !form.category_id || !form.pay_account_id}
-              onClick={() => void submit()}
-            >
-              <Save size={18} /> Guardar {form.type === "income" ? "ingreso" : "gasto"}
-            </button>
+            <div className="drawer-footer accounting-movement-footer">
+              <button
+                className="primary-button wide"
+                disabled={!form.amount || !form.category_id || !form.pay_account_id}
+                onClick={() => void submit()}
+              >
+                <Save size={18} /> Guardar {form.type === "income" ? "ingreso" : "gasto"}
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+      {manualOpen && (
+        <div className="drawer-backdrop">
+          <aside className="drawer accounting-entry-drawer">
+            <div className="panel-heading">
+              <div>
+                <p className="section-label">Contabilidad</p>
+                <h2>Nueva partida contable</h2>
+              </div>
+              <button className="icon-button" onClick={() => setManualOpen(false)} aria-label="Cerrar partida">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="manual-journal-body">
+              <div className="form-grid two">
+                <label>
+                  Fecha
+                  <input
+                    type="date"
+                    value={manualEntry.entry_date}
+                    onChange={(event) => setManualEntry({ ...manualEntry, entry_date: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Concepto
+                  <input
+                    value={manualEntry.memo}
+                    onChange={(event) => setManualEntry({ ...manualEntry, memo: event.target.value })}
+                    placeholder="Ej. Anticipo y comisión bancaria"
+                  />
+                </label>
+              </div>
+
+              <div className="manual-journal-heading">
+                <div>
+                  <h3>Detalle de la partida</h3>
+                  <p>Busca por código, nombre o tipo de cuenta; coloca cada monto en Debe o Haber.</p>
+                </div>
+                <button className="secondary-button" type="button" onClick={addManualLine}>
+                  <Plus size={15} /> Agregar línea
+                </button>
+              </div>
+
+              {journalAccounts.length === 0 ? (
+                <EmptyWork title="No hay cuentas disponibles" text="Activa cuentas imputables en el catálogo para registrar una partida." />
+              ) : (
+                <>
+                  <div className="manual-journal-columns" aria-hidden="true">
+                    <span>Cuenta</span>
+                    <span>Debe (L)</span>
+                    <span>Haber (L)</span>
+                    <span />
+                  </div>
+                  <div className="manual-journal-lines">
+                    {manualEntry.lines.map((line, index) => (
+                      <div className="manual-journal-line" key={line.id}>
+                        <label className="manual-journal-account">
+                          <span className="mobile-line-label">Cuenta</span>
+                          <input
+                            type="search"
+                            list={manualAccountListId.current}
+                            value={line.account_search}
+                            onChange={(event) => updateManualAccount(line.id, event.target.value)}
+                            placeholder="Buscar por código, nombre o tipo"
+                            aria-label={`Cuenta de la línea ${index + 1}`}
+                          />
+                        </label>
+                        <label>
+                          <span className="mobile-line-label">Debe (L)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={line.debit}
+                            onChange={(event) => updateManualLine(line.id, "debit", event.target.value)}
+                            aria-label={`Debe de la línea ${index + 1}`}
+                          />
+                        </label>
+                        <label>
+                          <span className="mobile-line-label">Haber (L)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={line.credit}
+                            onChange={(event) => updateManualLine(line.id, "credit", event.target.value)}
+                            aria-label={`Haber de la línea ${index + 1}`}
+                          />
+                        </label>
+                        <button
+                          className="icon-action danger"
+                          type="button"
+                          onClick={() => removeManualLine(line.id)}
+                          disabled={manualEntry.lines.length <= 2}
+                          aria-label={`Eliminar línea ${index + 1}`}
+                          title="Eliminar línea"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <datalist id={manualAccountListId.current}>
+                    {journalAccounts.map((account) => (
+                      <option
+                        key={account.id}
+                        value={`${account.code} · ${account.name} — ${ACCOUNT_TYPE_LABEL[account.type]}`}
+                      />
+                    ))}
+                  </datalist>
+                </>
+              )}
+
+              <div className="manual-journal-totals">
+                <div><span>Total Debe</span><strong>{lps(manualDebitCents / 100)}</strong></div>
+                <div><span>Total Haber</span><strong>{lps(manualCreditCents / 100)}</strong></div>
+                <div className={manualBalanced ? "balanced" : "unbalanced"}>
+                  <span>Diferencia</span>
+                  <strong>{lps(Math.abs(manualDebitCents - manualCreditCents) / 100)}</strong>
+                </div>
+              </div>
+              {manualTouchedLines.length > 0 && !manualBalanced && (
+                <p className="manual-journal-hint" role="status">
+                  {manualInvalidLine
+                    ? "Completa cada línea con una cuenta y un monto en un solo lado."
+                    : validManualLines.length < 2
+                      ? "Agrega al menos dos líneas con cuenta y monto."
+                      : "Los totales de Debe y Haber deben ser iguales."}
+                </p>
+              )}
+              {manualError && <p className="manual-journal-error" role="alert">{manualError}</p>}
+            </div>
+            <div className="drawer-footer manual-journal-footer">
+              <button className="secondary-button" onClick={() => setManualOpen(false)} disabled={manualSaving}>Cancelar</button>
+              <button
+                className="primary-button"
+                onClick={() => void submitManualJournal()}
+                disabled={!manualBalanced || !manualEntry.entry_date || !manualEntry.memo.trim() || manualSaving || journalAccounts.length === 0}
+              >
+                <Save size={17} /> {manualSaving ? "Guardando…" : "Guardar partida"}
+              </button>
+            </div>
           </aside>
         </div>
       )}
