@@ -205,7 +205,7 @@ export function App() {
         supabase.from("chart_of_accounts").select("*").eq("active", true).order("code"),
         supabase
           .from("journal_entries")
-          .select("id, entry_date, memo, source, created_at, journal_lines(debit, credit, account_id, chart_of_accounts(code, name, type, system_key))")
+          .select("id, entry_date, memo, source, source_id, created_at, journal_lines(debit, credit, account_id, chart_of_accounts(code, name, type, system_key))")
           .order("entry_date", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(500),
@@ -313,8 +313,25 @@ export function App() {
     setAuditLog(auditRes.data ?? []);
     setAccounts((accountRes.data ?? []) as Account[]);
 
+    // Los devengos históricos se crearon al regularizar las comisiones. En los libros
+    // se ordenan junto a su factura sin alterar el momento real de registro.
+    const commissionInvoiceTime = new Map<string, string>(
+      (commissionRes.data ?? [])
+        .filter((commission: any) => commission.documents?.created_at)
+        .map((commission: any) => [commission.id, commission.documents.created_at]),
+    );
+    const eventTime = (entry: any) =>
+      entry.source === "commission_accrual"
+        ? commissionInvoiceTime.get(entry.source_id) ?? entry.created_at
+        : entry.created_at;
+    const journalRows = [...(movementRes.data ?? [])].sort((a: any, b: any) =>
+      String(b.entry_date).localeCompare(String(a.entry_date)) ||
+      String(eventTime(b)).localeCompare(String(eventTime(a))) ||
+      String(b.created_at).localeCompare(String(a.created_at)),
+    );
+
     // Libro completo (todos los asientos con sus lineas).
-    const fullJournal: JournalEntryFull[] = (movementRes.data ?? []).map((e: any) => ({
+    const fullJournal: JournalEntryFull[] = journalRows.map((e: any) => ({
       id: e.id,
       entry_date: e.entry_date,
       memo: e.memo ?? null,
