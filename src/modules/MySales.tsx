@@ -122,6 +122,7 @@ export function MySales({
         <div className="acc-card income">
           <span>Comision por pagar</span>
           <strong>{lps(totalPorPagar)}</strong>
+          <small>{porPagar.length} {porPagar.length === 1 ? "factura pendiente" : "facturas pendientes"}</small>
         </div>
         <div className="acc-card">
           <span>Comision pagada</span>
@@ -174,7 +175,7 @@ export function MySales({
       {/* Comisiones */}
       <div className="seller-tabs" style={{ marginTop: 8 }}>
         <button className={tab === "pending" ? "active" : ""} onClick={() => setTab("pending")}>
-          Por pagar ({lps(totalPorPagar)})
+          Por pagar ({porPagar.length} {porPagar.length === 1 ? "factura" : "facturas"} · {lps(totalPorPagar)})
         </button>
         <button className={tab === "hold" ? "active" : ""} onClick={() => setTab("hold")}>
           En espera (credito)
@@ -188,10 +189,11 @@ export function MySales({
         {list.length === 0 ? (
           <EmptyWork title="Nada aqui" text="No hay comisiones en este estado." />
         ) : (
-          list.map((c) => {
+          list.map((c, index) => {
             const discount = saleDiscount(c);
             return (
               <div className="commission-row" key={c.id}>
+                <span className="commission-row-number" aria-label={`Número en la lista: ${index + 1}`}>{index + 1}</span>
                 <div className="commission-info">
                   <strong>#{c.doc?.document_number ?? "—"}</strong>
                   <span>{c.doc?.customer_name ?? "Cliente final"} · {shortDate(c.created_at)}</span>

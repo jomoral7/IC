@@ -3757,6 +3757,29 @@ td:last-child {
   padding: 22px;
   box-shadow: 0 24px 70px rgba(11, 37, 51, 0.28);
 }
+.seller-commission-modal {
+  width: min(1120px, calc(100vw - 32px));
+  height: calc(100vh - 32px);
+  height: calc(100dvh - 32px);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.seller-commission-modal .commission-list,
+.seller-commission-modal .goals-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.seller-commission-modal .invoice-modal-head,
+.seller-commission-modal .seller-tabs {
+  flex: 0 0 auto;
+}
 .invoice-modal-head {
   display: flex;
   align-items: flex-start;
@@ -4258,6 +4281,21 @@ td:last-child {
   border-radius: 10px;
   padding: 10px 12px;
   flex-wrap: wrap;
+}
+.commission-row-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 .commission-info {
   flex: 1 1 200px;
@@ -6320,6 +6358,13 @@ td:last-child {
   .user-drawer {
     height: 100vh;
     height: 100dvh;
+  }
+
+  .seller-commission-modal {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
   }
 
   .user-drawer-body {

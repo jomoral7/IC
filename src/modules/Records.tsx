@@ -30,12 +30,14 @@ export function Invoices({
         <Search size={16} />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar factura por numero (del QR) o cliente" />
       </div>
+      <p className="mini-note">{filtered.length} {filtered.length === 1 ? "factura en la lista" : "facturas en la lista"}</p>
       {filtered.length === 0 ? (
         <EmptyWork title="Sin facturas" text="Las ventas emitidas desde POS apareceran aqui." />
       ) : (
         <DataTable
-          headers={["No.", "Cliente", "Estado", "Pago", "Total", "Fecha", "Acciones"]}
-          rows={filtered.map((doc) => [
+          headers={["#", "No. factura", "Cliente", "Estado", "Pago", "Total", "Fecha", "Acciones"]}
+          rows={filtered.map((doc, index) => [
+            index + 1,
             doc.document_number,
             doc.customer_name ?? "Cliente final",
             doc.voided_at ? <span className="stock-badge out">Anulada</span> : <span className="stock-badge ok">Emitida</span>,

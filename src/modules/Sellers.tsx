@@ -216,7 +216,7 @@ function SellerPanel({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="invoice-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="invoice-modal seller-commission-modal" onClick={(e) => e.stopPropagation()}>
         <div className="invoice-modal-head">
           <div>
             <p className="section-label">Comisiones</p>
@@ -276,8 +276,9 @@ function SellerPanel({
             {list.length === 0 ? (
               <EmptyWork title="Nada aqui" text="No hay comisiones en este estado." />
             ) : (
-              list.map((c) => (
+              list.map((c, index) => (
                 <div className="commission-row" key={c.id}>
+                  <span className="commission-row-number" aria-label={`Número en la lista: ${index + 1}`}>{index + 1}</span>
                   {tab === "pending" && (
                     <input
                       type="checkbox"
