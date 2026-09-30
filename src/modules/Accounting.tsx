@@ -13,6 +13,12 @@ const SOURCE_LABEL: Record<string, string> = {
   income: "Ingreso",
   manual: "Manual",
   manual_entry: "Partida manual",
+  commission_accrual: "Comisión devengada",
+  commission_adjustment: "Ajuste de comisión",
+  commission_payment: "Pago de comisión",
+  bonus_accrual: "Bono devengado",
+  bonus_adjustment: "Ajuste de bono",
+  bonus_payment: "Pago de bono",
 };
 
 type MovementForm = {

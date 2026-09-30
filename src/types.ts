@@ -49,6 +49,7 @@ export type BonusPayment = {
   seller_id: string;
   goal_id: string;
   period: string; // YYYY-MM-DD (primer dia del mes)
+  sales: number;
   bonus: number;
   status: string; // pending | paid
 };

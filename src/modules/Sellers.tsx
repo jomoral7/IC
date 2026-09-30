@@ -25,6 +25,7 @@ export function Sellers({
   onSave,
   onDelete,
   onPayCommission,
+  onPayCommissions,
   onSaveGoal,
   onDeleteGoal,
   onPayBonus,
@@ -38,6 +39,7 @@ export function Sellers({
   onSave: (form: { name: string; code: string; phone: string; commission_rate: number; active: boolean; user_id: string | null }, id?: string) => Promise<void>;
   onDelete: (seller: Seller) => Promise<void>;
   onPayCommission: (commissionId: string) => Promise<void>;
+  onPayCommissions: (commissionIds: string[]) => Promise<void>;
   onSaveGoal: (sellerId: string, form: { name: string; min_sales: number; bonus: number }, id?: string) => Promise<void>;
   onDeleteGoal: (goalId: string) => Promise<void>;
   onPayBonus: (sellerId: string, goalId: string, period: string, sales: number, bonus: number) => Promise<void>;
@@ -154,12 +156,14 @@ export function Sellers({
 
       {panel && (
         <SellerPanel
+          key={panel.id}
           seller={panel}
           commissions={commissions.filter((c) => c.seller_id === panel.id)}
           goals={goals.filter((g) => g.seller_id === panel.id && g.active)}
           bonusPayments={bonusPayments.filter((b) => b.seller_id === panel.id)}
           onClose={() => setPanel(null)}
           onPayCommission={onPayCommission}
+          onPayCommissions={onPayCommissions}
           onPayBonus={onPayBonus}
           onOpenInvoice={onOpenInvoice}
         />
@@ -175,6 +179,7 @@ function SellerPanel({
   bonusPayments,
   onClose,
   onPayCommission,
+  onPayCommissions,
   onPayBonus,
   onOpenInvoice,
 }: {
@@ -184,10 +189,12 @@ function SellerPanel({
   bonusPayments: BonusPayment[];
   onClose: () => void;
   onPayCommission: (commissionId: string) => Promise<void>;
+  onPayCommissions: (commissionIds: string[]) => Promise<void>;
   onPayBonus: (sellerId: string, goalId: string, period: string, sales: number, bonus: number) => Promise<void>;
   onOpenInvoice: (documentId: string) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"pending" | "hold" | "paid" | "goals">("pending");
+  const [selectedCommissionIds, setSelectedCommissionIds] = useState<string[]>([]);
 
   const porPagar = commissions.filter((c) => c.status === "pending");
   const enEspera = commissions.filter((c) => c.status === "hold");
@@ -232,11 +239,50 @@ function SellerPanel({
 
         {tab !== "goals" && (
           <div className="commission-list">
+            {tab === "pending" && porPagar.length > 1 && (
+              <div className="commission-bulk-actions">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={porPagar.length > 0 && selectedCommissionIds.length === porPagar.length}
+                    onChange={(event) => setSelectedCommissionIds(event.target.checked ? porPagar.map((c) => c.id) : [])}
+                  />
+                  Seleccionar todas las pendientes
+                </label>
+                {selectedCommissionIds.length > 0 && (() => {
+                  const selected = porPagar.filter((c) => selectedCommissionIds.includes(c.id));
+                  const total = selected.reduce((sum, c) => sum + c.commission_amount, 0);
+                  return (
+                    <button
+                      className="primary-button"
+                      onClick={() => {
+                        if (window.confirm(`¿Confirmas pagar ${selected.length} comisiones por ${lps(total)} desde Bancos? Se registrará un pago por cada factura y se cancelará Comisiones por pagar.`)) {
+                          void onPayCommissions(selected.map((c) => c.id));
+                          setSelectedCommissionIds([]);
+                        }
+                      }}
+                    >
+                      Pagar seleccionadas · {lps(total)}
+                    </button>
+                  );
+                })()}
+              </div>
+            )}
             {list.length === 0 ? (
               <EmptyWork title="Nada aqui" text="No hay comisiones en este estado." />
             ) : (
               list.map((c) => (
                 <div className="commission-row" key={c.id}>
+                  {tab === "pending" && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Seleccionar comisión de factura ${c.doc?.document_number ?? "sin número"}`}
+                      checked={selectedCommissionIds.includes(c.id)}
+                      onChange={(event) => setSelectedCommissionIds((current) => event.target.checked
+                        ? [...current, c.id]
+                        : current.filter((id) => id !== c.id))}
+                    />
+                  )}
                   <div className="commission-info">
                     <strong>#{c.doc?.document_number ?? "—"}</strong>
                     <span>
@@ -249,7 +295,16 @@ function SellerPanel({
                       <Search size={14} /> Factura
                     </button>
                     {c.status === "pending" && (
-                      <button className="primary-button pay-btn" onClick={() => void onPayCommission(c.id)}>
+                      <button
+                        className="primary-button pay-btn"
+                        onClick={() => {
+                          const amount = lps(c.commission_amount);
+                          const invoice = c.doc?.document_number ?? "sin número";
+                          if (window.confirm(`¿Confirmas pagar ${amount} de comisión por la factura #${invoice} desde Bancos? Se registrará el pago contra Comisiones por pagar.`)) {
+                            void onPayCommission(c.id);
+                          }
+                        }}
+                      >
                         Pagar
                       </button>
                     )}
@@ -262,13 +317,39 @@ function SellerPanel({
 
         {tab === "goals" && (() => {
           const tiers = [...goals].sort((a, b) => a.min_sales - b.min_sales);
+          const pendingBonuses = bonusPayments.filter((b) => b.status === "pending").sort((a, b) => b.period.localeCompare(a.period));
           const reached = tiers.filter((g) => monthSales >= g.min_sales);
           const applicable = reached.length ? reached[reached.length - 1] : null;
           const paidThisMonth = bonusPayments.some((b) => b.period === period && b.status === "paid");
+          const pendingThisMonth = pendingBonuses.some((b) => b.period === period);
           const topMeta = tiers.length ? tiers[tiers.length - 1].min_sales : 0;
           const pct = topMeta > 0 ? Math.min(100, Math.round((monthSales / topMeta) * 100)) : 0;
           return (
             <div className="goals-panel">
+              {pendingBonuses.length > 0 && (
+                <div className="pending-bonuses">
+                  <h3>Bonificaciones pendientes</h3>
+                  {pendingBonuses.map((bonus) => {
+                    const goalName = goals.find((goal) => goal.id === bonus.goal_id)?.name ?? "Bono por metas";
+                    return (
+                      <div className="pending-bonus-row" key={bonus.id}>
+                        <span><strong>{goalName}</strong> · {bonus.period.slice(0, 7)} · Ventas {lps(bonus.sales)}</span>
+                        <strong>{lps(bonus.bonus)}</strong>
+                        <button
+                          className="primary-button pay-btn"
+                          onClick={() => {
+                            if (window.confirm(`¿Confirmas pagar ${lps(bonus.bonus)} del bono ${goalName} (${bonus.period.slice(0, 7)}) a ${seller.name} desde Bancos? Se cancelará Bonificaciones por pagar a vendedores.`)) {
+                              void onPayBonus(seller.id, bonus.goal_id, bonus.period, bonus.sales, bonus.bonus);
+                            }
+                          }}
+                        >
+                          Pagar
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <p className="goals-sales">
                 Ventas de este mes: <strong>{lps(monthSales)}</strong>
               </p>
@@ -292,7 +373,7 @@ function SellerPanel({
                       );
                     })}
                   </div>
-                  {applicable ? (
+                  {applicable && !pendingThisMonth ? (
                     paidThisMonth ? (
                       <p className="adj-result">
                         Bono del mes: <strong>{lps(applicable.bonus)}</strong> · <span className="stock-badge ok">Pagado</span>
@@ -300,14 +381,20 @@ function SellerPanel({
                     ) : (
                       <button
                         className="primary-button wide"
-                        onClick={() => void onPayBonus(seller.id, applicable.id, period, monthSales, applicable.bonus)}
+                        onClick={() => {
+                          if (window.confirm(`¿Confirmas pagar el bono por metas de ${lps(applicable.bonus)} para ${seller.name} desde Bancos? Se cancelará Bonificaciones por pagar a vendedores.`)) {
+                            void onPayBonus(seller.id, applicable.id, period, monthSales, applicable.bonus);
+                          }
+                        }}
                       >
                         Pagar bono {lps(applicable.bonus)}
                       </button>
                     )
-                  ) : (
+                  ) : applicable && paidThisMonth ? (
+                    <p className="adj-result">Bono del mes: <strong>{lps(applicable.bonus)}</strong> · <span className="stock-badge ok">Pagado</span></p>
+                  ) : !applicable ? (
                     <p className="adj-result">Aun no alcanza el primer rango de bono.</p>
-                  )}
+                  ) : null}
                 </>
               )}
             </div>

@@ -201,7 +201,7 @@ export function App() {
           .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, subtotal, discount, total, created_at, document_items(discount))")
           .order("created_at", { ascending: false }),
         supabase.from("seller_goals").select("*").order("min_sales"),
-        supabase.from("seller_bonus_payments").select("id, seller_id, goal_id, period, bonus, status"),
+        supabase.from("seller_bonus_payments").select("id, seller_id, goal_id, period, sales, bonus, status"),
         supabase.from("chart_of_accounts").select("*").eq("active", true).order("code"),
         supabase
           .from("journal_entries")
@@ -304,7 +304,11 @@ export function App() {
       })) as Commission[],
     );
     setGoals((goalRes.data ?? []) as SellerGoal[]);
-    setBonusPayments((bonusRes.data ?? []) as BonusPayment[]);
+    setBonusPayments((bonusRes.data ?? []).map((bonus: any) => ({
+      ...bonus,
+      sales: Number(bonus.sales ?? 0),
+      bonus: Number(bonus.bonus ?? 0),
+    })) as BonusPayment[]);
     setStockRequests(pendingRequests);
     setAuditLog(auditRes.data ?? []);
     setAccounts((accountRes.data ?? []) as Account[]);
@@ -694,31 +698,33 @@ export function App() {
 
   async function payCommission(commissionId: string) {
     if (!supabase) return;
-    const { error } = await supabase
-      .from("seller_commissions")
-      .update({ status: "paid", paid_at: new Date().toISOString() })
-      .eq("id", commissionId);
+    const { error } = await supabase.rpc("pay_seller_commission", {
+      p_commission_id: commissionId,
+    });
     if (error) {
       setNotice(error.message);
       return;
     }
-    // Asiento: Debe Comisiones de vendedores / Haber Caja.
     const comm = commissions.find((c) => c.id === commissionId);
     const seller = comm ? sellers.find((s) => s.id === comm.seller_id) : null;
-    if (comm && comm.commission_amount > 0) {
-      await postJournal(
-        new Date().toISOString().slice(0, 10),
-        `Pago comision ${seller?.name ?? ""} · fact ${comm.doc?.document_number ?? ""}`.trim(),
-        "expense",
-        comm.document_id,
-        [
-          { account_id: accountIdByKey("commission_expense"), debit: comm.commission_amount, credit: 0, description: "Comision vendedor" },
-          { account_id: accountIdByKey("cash"), debit: 0, credit: comm.commission_amount, description: "Pago comision" },
-        ],
-      );
-    }
     await logAudit("Pagar comision", `${seller?.name ?? ""} · L ${(comm?.commission_amount ?? 0).toLocaleString("es-HN")} · fact ${comm?.doc?.document_number ?? ""}`);
     setNotice("Comision pagada");
+    await loadWorkspace();
+  }
+
+  async function payCommissions(commissionIds: string[]) {
+    if (!supabase || commissionIds.length === 0) return;
+    const { error } = await supabase.rpc("pay_seller_commissions", {
+      p_commission_ids: commissionIds,
+    });
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    const paid = commissions.filter((commission) => commissionIds.includes(commission.id));
+    const total = paid.reduce((sum, commission) => sum + commission.commission_amount, 0);
+    await logAudit("Pagar comisiones seleccionadas", `${paid.length} facturas · L ${total.toLocaleString("es-HN", { minimumFractionDigits: 2 })}`);
+    setNotice(`${paid.length} comisiones pagadas desde Bancos`);
     await loadWorkspace();
   }
 
@@ -741,32 +747,17 @@ export function App() {
 
   async function payBonus(sellerId: string, goalId: string, period: string, sales: number, bonus: number) {
     if (!supabase) return;
-    const { error } = await supabase
-      .from("seller_bonus_payments")
-      .upsert(
-        { seller_id: sellerId, goal_id: goalId, period, sales, bonus, status: "paid", paid_at: new Date().toISOString() },
-        { onConflict: "seller_id,period" },
-      );
+    const { error } = await supabase.rpc("pay_seller_bonus", {
+      p_seller_id: sellerId,
+      p_goal_id: goalId,
+      p_period: period,
+    });
     if (error) {
       setNotice(error.message);
       return;
     }
-    // Asiento: Debe Comisiones de vendedores / Haber Caja (el bono es gasto de comision).
-    if (bonus > 0) {
-      const seller = sellers.find((s) => s.id === sellerId);
-      await postJournal(
-        new Date().toISOString().slice(0, 10),
-        `Pago bono ${seller?.name ?? ""} · ${period}`.trim(),
-        "expense",
-        null,
-        [
-          { account_id: accountIdByKey("commission_expense"), debit: bonus, credit: 0, description: "Bono vendedor" },
-          { account_id: accountIdByKey("cash"), debit: 0, credit: bonus, description: "Pago bono" },
-        ],
-      );
-    }
     const bSeller = sellers.find((s) => s.id === sellerId);
-    await logAudit("Pagar bono", `${bSeller?.name ?? ""} · L ${bonus.toLocaleString("es-HN")} · ${period}`);
+    await logAudit("Pagar bono", `${bSeller?.name ?? ""} · L ${bonus.toLocaleString("es-HN")} · ${period} · ventas ${sales.toLocaleString("es-HN")}`);
     setNotice("Bono pagado");
     await loadWorkspace();
   }
@@ -2358,6 +2349,7 @@ export function App() {
             onSave={saveSeller}
             onDelete={deleteSeller}
             onPayCommission={payCommission}
+            onPayCommissions={payCommissions}
             onSaveGoal={saveGoal}
             onDeleteGoal={deleteGoal}
             onPayBonus={payBonus}

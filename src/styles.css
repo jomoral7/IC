@@ -4158,6 +4158,56 @@ td:last-child {
   max-height: 52vh;
   overflow-y: auto;
 }
+.commission-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 2px;
+}
+.commission-bulk-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.commission-row > input[type="checkbox"],
+.commission-bulk-actions input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: var(--navy);
+}
+.pending-bonuses {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.pending-bonuses h3 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 14px;
+}
+.pending-bonus-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.pending-bonus-row span {
+  flex: 1 1 200px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pending-bonus-row > strong {
+  color: var(--navy);
+}
 .commission-row {
   display: flex;
   align-items: center;
