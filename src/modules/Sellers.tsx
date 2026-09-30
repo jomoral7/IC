@@ -62,6 +62,10 @@ export function Sellers({
       .reduce((s, c) => s + c.commission_amount, 0);
   }
 
+  function pendingCountFor(sellerId: string) {
+    return commissions.filter((c) => c.seller_id === sellerId && c.status === "pending").length;
+  }
+
   return (
     <>
       <section className="panel full-panel">
@@ -102,6 +106,7 @@ export function Sellers({
                     <td className="num">{Math.round(r.commission_rate * 100)}%</td>
                     <td className="num">
                       <strong className={pendingFor(r.id) > 0 ? "profit-neg" : ""}>{lps(pendingFor(r.id))}</strong>
+                      <small className="commission-pending-count">{pendingCountFor(r.id)} {pendingCountFor(r.id) === 1 ? "factura" : "facturas"}</small>
                     </td>
                     <td className="center">
                       <span className={`stock-badge ${r.active ? "ok" : "out"}`}>{r.active ? "Activo" : "Inactivo"}</span>
@@ -224,7 +229,7 @@ function SellerPanel({
 
         <div className="seller-tabs">
           <button className={tab === "pending" ? "active" : ""} onClick={() => setTab("pending")}>
-            Por pagar ({lps(totalPorPagar)})
+            Por pagar ({porPagar.length} {porPagar.length === 1 ? "factura" : "facturas"} · {lps(totalPorPagar)})
           </button>
           <button className={tab === "hold" ? "active" : ""} onClick={() => setTab("hold")}>
             En espera (credito)

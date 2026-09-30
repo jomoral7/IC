@@ -352,10 +352,18 @@ export function App() {
         .map((e) => {
           const incomeLines = e.lines.filter((l) => l.account_type === "income");
           const expenseLines = e.lines.filter((l) => l.account_type === "expense");
-          let type: "income" | "expense";
+          const isCommissionPayment = e.source === "commission_payment";
+          const isBonusPayment = e.source === "bonus_payment";
+          const isPayment = isCommissionPayment || isBonusPayment;
+          const isAccruedPayable = ["commission_accrual", "commission_adjustment", "bonus_accrual", "bonus_adjustment"].includes(e.source);
+          let type: "income" | "expense" | "payment";
           let amount: number;
           let categoryLine;
-          if (incomeLines.length > 0) {
+          if (isPayment) {
+            type = "payment";
+            amount = e.lines.filter((line) => line.account_code === "1102").reduce((sum, line) => sum + line.credit, 0);
+            categoryLine = null;
+          } else if (incomeLines.length > 0) {
             type = "income";
             amount = incomeLines.reduce((s, l) => s + (l.credit - l.debit), 0);
             categoryLine = incomeLines[0];
@@ -376,8 +384,8 @@ export function App() {
             memo: e.memo ?? (e.source === "sale" ? "Venta" : e.source === "void" ? "Anulacion" : null),
             type,
             amount,
-            category_name: categoryLine?.account_name ?? null,
-            pay_account_name: payLine?.account_name ?? null,
+            category_name: isCommissionPayment ? "Pago de comisión" : isBonusPayment ? "Pago de bonificación" : categoryLine?.account_name ?? null,
+            pay_account_name: payLine?.account_name ?? (isAccruedPayable ? "Pendiente de pago" : null),
             created_at: e.created_at,
           } as CashMovement;
         })

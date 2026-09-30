@@ -76,7 +76,7 @@ export type CashMovement = {
   id: string; // entry_id
   entry_date: string;
   memo: string | null;
-  type: "expense" | "income";
+  type: "expense" | "income" | "payment";
   amount: number;
   category_name: string | null;
   pay_account_name: string | null;

@@ -299,11 +299,13 @@ export function Accounting({
           <EmptyWork title="Sin movimientos" text="Registra un gasto o ingreso con los botones de arriba." />
         ) : (
           <DataTable
-            headers={["Fecha", "Tipo", "Categoria", "Cuenta", "Detalle", "Monto"]}
+            headers={["Fecha", "Tipo", "Categoria", "Cuenta / estado", "Detalle", "Monto"]}
             rows={movements.map((m) => [
               shortDate(m.entry_date),
               m.type === "income" ? (
                 <span className="stock-badge ok">Ingreso</span>
+              ) : m.type === "payment" ? (
+                <span className="stock-badge out">Pago</span>
               ) : (
                 <span className="stock-badge out">Gasto</span>
               ),
