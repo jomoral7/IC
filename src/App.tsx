@@ -402,7 +402,7 @@ export function App() {
             type,
             amount,
             category_name: isCommissionPayment ? "Pago de comisión" : isBonusPayment ? "Pago de bonificación" : categoryLine?.account_name ?? null,
-            pay_account_name: payLine?.account_name ?? (isAccruedPayable ? "Pendiente de pago" : null),
+            pay_account_name: payLine?.account_name ?? (isAccruedPayable ? (amount > 0 ? "Pendiente de pago" : "Ajuste contable") : null),
             created_at: e.created_at,
           } as CashMovement;
         })
@@ -2101,10 +2101,10 @@ export function App() {
     entry_date: string;
     memo: string;
     lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
-  }): Promise<boolean> {
+  }): Promise<{ ok: boolean; error?: string }> {
     if (!supabase) {
       setNotice("No hay conexión con la base de datos.");
-      return false;
+      return { ok: false, error: "No hay conexión con la base de datos." };
     }
     const totalDebit = f.lines.reduce((sum, line) => sum + line.debit, 0);
     const { error } = await supabase.rpc("post_journal_entry", {
@@ -2117,13 +2117,18 @@ export function App() {
     if (error) {
       console.warn("No se pudo registrar la partida manual:", error.message);
       setNotice(`No se pudo registrar la partida: ${error.message}`);
-      return false;
+      return { ok: false, error: error.message };
     }
     const { error: auditError } = await logAudit("Partida manual", `${f.memo} · ${f.lines.length} líneas · L ${totalDebit.toLocaleString("es-HN", { minimumFractionDigits: 2 })}`);
     if (auditError) console.warn("La partida se guardó, pero no se pudo registrar en auditoría:", auditError.message);
     setNotice("Partida manual registrada");
-    await loadWorkspace();
-    return true;
+    try {
+      await loadWorkspace();
+    } catch (refreshError) {
+      console.warn("La partida se guardó, pero falló la actualización de la vista:", refreshError);
+      setNotice("Partida guardada. Actualiza la página para verla en los libros.");
+    }
+    return { ok: true };
   }
 
   async function saveAccount(f: { code: string; name: string; type: AccountType }) {

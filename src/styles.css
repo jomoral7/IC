@@ -4978,6 +4978,11 @@ td:last-child {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  flex-wrap: wrap;
+}
+.manual-journal-footer .manual-journal-error {
+  flex: 0 0 100%;
+  margin: 0;
 }
 @media (max-width: 640px) {
   .accounting-movement-drawer {
@@ -5046,6 +5051,9 @@ td:last-child {
   }
   .manual-journal-footer button {
     justify-content: center;
+  }
+  .manual-journal-footer .manual-journal-error {
+    grid-column: 1 / -1;
   }
 }
 

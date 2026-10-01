@@ -49,6 +49,7 @@ type ManualJournalForm = {
   memo: string;
   lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
 };
+type ManualJournalResult = { ok: boolean; error?: string };
 
 const todayStr = () => {
   const date = new Date();
@@ -78,7 +79,7 @@ export function Accounting({
   movements: CashMovement[];
   journal: JournalEntryFull[];
   registerMovement: (form: MovementForm) => Promise<void>;
-  registerJournalEntry: (form: ManualJournalForm) => Promise<boolean>;
+  registerJournalEntry: (form: ManualJournalForm) => Promise<ManualJournalResult>;
   saveAccount: (form: { code: string; name: string; type: AccountType }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<
@@ -163,6 +164,15 @@ export function Accounting({
     validManualLines.length >= 2 &&
     manualDebitCents > 0 &&
     manualDebitCents === manualCreditCents;
+  const manualValidationMessage =
+    journalAccounts.length === 0 ? "No hay cuentas activas disponibles para esta partida."
+      : !manualEntry.entry_date ? "Selecciona la fecha de la partida."
+      : !manualEntry.memo.trim() ? "Escribe el concepto de la partida."
+      : manualTouchedLines.length < 2 ? "Completa al menos dos líneas con cuenta y monto."
+      : manualTouchedLines.some((line) => !line.account_id) ? "Selecciona cada cuenta del catálogo; escribir solo parte del nombre no la selecciona."
+      : manualInvalidLine ? "Cada línea necesita un monto positivo en Debe o en Haber."
+      : manualDebitCents !== manualCreditCents ? "El total Debe debe ser igual al total Haber."
+      : "";
 
   function openManualJournal() {
     nextManualLineId.current = 2;
@@ -172,9 +182,12 @@ export function Accounting({
   }
 
   function updateManualAccount(id: number, value: string) {
-    const selectedAccount = journalAccounts.find((account) =>
-      `${account.code} · ${account.name} — ${ACCOUNT_TYPE_LABEL[account.type]}` === value,
+    const search = value.trim().toLocaleLowerCase("es");
+    const matches = journalAccounts.filter((account) =>
+      [account.code, account.name, `${account.code} · ${account.name} — ${ACCOUNT_TYPE_LABEL[account.type]}`]
+        .some((label) => label.toLocaleLowerCase("es") === search),
     );
+    const selectedAccount = matches.length === 1 ? matches[0] : null;
     setManualEntry((current) => ({
       ...current,
       lines: current.lines.map((line) => line.id === id
@@ -199,6 +212,7 @@ export function Accounting({
   function addManualLine() {
     nextManualLineId.current += 1;
     setManualEntry((current) => ({ ...current, lines: [...current.lines, emptyJournalLine(nextManualLineId.current)] }));
+    setManualError("");
   }
 
   function removeManualLine(id: number) {
@@ -207,11 +221,15 @@ export function Accounting({
   }
 
   async function submitManualJournal() {
-    if (!manualBalanced || !manualEntry.entry_date || !manualEntry.memo.trim() || manualSaving) return;
+    if (manualSaving) return;
+    if (manualValidationMessage) {
+      setManualError(manualValidationMessage);
+      return;
+    }
     setManualSaving(true);
     setManualError("");
     try {
-      const saved = await registerJournalEntry({
+      const result = await registerJournalEntry({
         entry_date: manualEntry.entry_date,
         memo: manualEntry.memo.trim(),
         lines: validManualLines.map((line) => ({
@@ -221,11 +239,11 @@ export function Accounting({
           description: manualEntry.memo.trim(),
         })),
       });
-      if (saved) {
+      if (result.ok) {
         setManualOpen(false);
         setManualEntry(emptyManualJournal());
       } else {
-        setManualError("No se pudo guardar la partida. Revisa la conexión e inténtalo de nuevo.");
+        setManualError(result.error ?? "No se pudo guardar la partida. Revisa la conexión e inténtalo de nuevo.");
       }
     } catch {
       setManualError("No se pudo guardar la partida. Revisa la conexión e inténtalo de nuevo.");
@@ -421,14 +439,14 @@ export function Accounting({
                   <input
                     type="date"
                     value={manualEntry.entry_date}
-                    onChange={(event) => setManualEntry({ ...manualEntry, entry_date: event.target.value })}
+                    onChange={(event) => { setManualEntry({ ...manualEntry, entry_date: event.target.value }); setManualError(""); }}
                   />
                 </label>
                 <label>
                   Concepto
                   <input
                     value={manualEntry.memo}
-                    onChange={(event) => setManualEntry({ ...manualEntry, memo: event.target.value })}
+                    onChange={(event) => { setManualEntry({ ...manualEntry, memo: event.target.value }); setManualError(""); }}
                     placeholder="Ej. Anticipo y comisión bancaria"
                   />
                 </label>
@@ -532,14 +550,14 @@ export function Accounting({
                       : "Los totales de Debe y Haber deben ser iguales."}
                 </p>
               )}
-              {manualError && <p className="manual-journal-error" role="alert">{manualError}</p>}
             </div>
             <div className="drawer-footer manual-journal-footer">
+              {manualError && <p className="manual-journal-error" role="alert">{manualError}</p>}
               <button className="secondary-button" onClick={() => setManualOpen(false)} disabled={manualSaving}>Cancelar</button>
               <button
                 className="primary-button"
                 onClick={() => void submitManualJournal()}
-                disabled={!manualBalanced || !manualEntry.entry_date || !manualEntry.memo.trim() || manualSaving || journalAccounts.length === 0}
+                disabled={manualSaving}
               >
                 <Save size={17} /> {manualSaving ? "Guardando…" : "Guardar partida"}
               </button>
