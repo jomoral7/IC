@@ -6772,3 +6772,26 @@ td:last-child {
   .product-picker .catalog-list button em { grid-column: 1; grid-row: 2; }
   .product-picker .catalog-list button b { grid-column: 2; grid-row: 1 / span 2; }
 }
+.movement-detail {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+}
+
+.movement-entry-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #0d5b7a;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.movement-entry-link:focus-visible {
+  outline: 2px solid #0d5b7a;
+  outline-offset: 3px;
+}

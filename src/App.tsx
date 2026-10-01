@@ -324,6 +324,12 @@ export function App() {
       entry.source === "commission_accrual"
         ? commissionInvoiceTime.get(entry.source_id) ?? entry.created_at
         : entry.created_at;
+    if (movementRes.error) {
+      console.warn("No se pudo cargar el Libro Diario:", movementRes.error.message);
+      setNotice(`No se pudo actualizar el Libro Diario: ${movementRes.error.message}`);
+      if (showLoader) setLoading(false);
+      return false;
+    }
     const journalRows = [...(movementRes.data ?? [])].sort((a: any, b: any) =>
       String(b.entry_date).localeCompare(String(a.entry_date)) ||
       String(eventTime(b)).localeCompare(String(eventTime(a))) ||
@@ -402,7 +408,15 @@ export function App() {
             type,
             amount,
             category_name: isCommissionPayment ? "Pago de comisión" : isBonusPayment ? "Pago de bonificación" : categoryLine?.account_name ?? null,
-            pay_account_name: payLine?.account_name ?? (isAccruedPayable ? (amount > 0 ? "Pendiente de pago" : "Ajuste contable") : null),
+            pay_account_name: payLine?.account_name ?? (
+              isAccruedPayable
+                ? (amount > 0 ? "Pendiente de pago" : "Ajuste contable")
+                : e.source === "manual_entry"
+                  ? e.lines.find((line) => line.account_type === "liability" && line.credit > 0)?.account_name
+                    ?? e.lines.find((line) => line.account_type !== "income" && line.account_type !== "expense" && line.credit > 0)?.account_name
+                    ?? "Ver partida en Libro Diario"
+                  : null
+            ),
             created_at: e.created_at,
           } as CashMovement;
         })
@@ -418,6 +432,7 @@ export function App() {
       return;
     }
     if (showLoader) setLoading(false);
+    return true;
   }
 
   // Nombre del usuario actual (para huella y registros).
@@ -2101,13 +2116,13 @@ export function App() {
     entry_date: string;
     memo: string;
     lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
-  }): Promise<{ ok: boolean; error?: string }> {
+  }): Promise<{ ok: boolean; error?: string; id?: string }> {
     if (!supabase) {
       setNotice("No hay conexión con la base de datos.");
       return { ok: false, error: "No hay conexión con la base de datos." };
     }
     const totalDebit = f.lines.reduce((sum, line) => sum + line.debit, 0);
-    const { error } = await supabase.rpc("post_journal_entry", {
+    const { data: entryId, error } = await supabase.rpc("post_journal_entry", {
       p_entry_date: f.entry_date,
       p_memo: f.memo,
       p_source: "manual_entry",
@@ -2123,12 +2138,13 @@ export function App() {
     if (auditError) console.warn("La partida se guardó, pero no se pudo registrar en auditoría:", auditError.message);
     setNotice("Partida manual registrada");
     try {
-      await loadWorkspace();
+      const refreshed = await loadWorkspace();
+      if (!refreshed) setNotice("Partida guardada. No se pudo actualizar el Libro Diario; recarga la página para verla.");
     } catch (refreshError) {
       console.warn("La partida se guardó, pero falló la actualización de la vista:", refreshError);
       setNotice("Partida guardada. Actualiza la página para verla en los libros.");
     }
-    return { ok: true };
+    return { ok: true, id: typeof entryId === "string" ? entryId : undefined };
   }
 
   async function saveAccount(f: { code: string; name: string; type: AccountType }) {

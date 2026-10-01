@@ -49,7 +49,7 @@ type ManualJournalForm = {
   memo: string;
   lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
 };
-type ManualJournalResult = { ok: boolean; error?: string };
+type ManualJournalResult = { ok: boolean; error?: string; id?: string };
 
 const todayStr = () => {
   const date = new Date();
@@ -90,6 +90,7 @@ export function Accounting({
   const [manualOpen, setManualOpen] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState("");
+  const [savedEntryId, setSavedEntryId] = useState<string | null>(null);
   const [manualEntry, setManualEntry] = useState<ManualJournalDraft>(emptyManualJournal);
   const nextManualLineId = useRef(2);
   const manualAccountListId = useRef(`manual-journal-account-options-${Math.random().toString(36).slice(2)}`);
@@ -242,6 +243,8 @@ export function Accounting({
       if (result.ok) {
         setManualOpen(false);
         setManualEntry(emptyManualJournal());
+        setSavedEntryId(result.id ?? null);
+        setTab("diario");
       } else {
         setManualError(result.error ?? "No se pudo guardar la partida. Revisa la conexión e inténtalo de nuevo.");
       }
@@ -329,7 +332,17 @@ export function Accounting({
               ),
               m.category_name ?? "-",
               m.pay_account_name ?? "-",
-              m.memo ?? "-",
+              <span className="movement-detail">
+                <span>{m.memo ?? "-"}</span>
+                <button
+                  type="button"
+                  className="movement-entry-link"
+                  onClick={() => { setSavedEntryId(m.id); setTab("diario"); }}
+                  aria-label={`Ver partida completa: ${m.memo ?? m.category_name ?? "movimiento"}`}
+                >
+                  Ver partida
+                </button>
+              </span>,
               (() => {
                 const signed = m.type === "income" ? m.amount : -m.amount;
                 return (
@@ -342,7 +355,7 @@ export function Accounting({
           />
         )
       ) : tab === "diario" ? (
-        <LibroDiario journal={journal} />
+        <LibroDiario journal={journal} savedEntryId={savedEntryId} />
       ) : tab === "mayor" ? (
         <LibroMayor journal={journal} />
       ) : tab === "resultados" ? (
@@ -569,14 +582,14 @@ export function Accounting({
   );
 }
 
-function LibroDiario({ journal }: { journal: JournalEntryFull[] }) {
+function LibroDiario({ journal, savedEntryId }: { journal: JournalEntryFull[]; savedEntryId: string | null }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const filtered = q
     ? journal.filter((e) =>
         `${e.memo ?? ""} ${SOURCE_LABEL[e.source] ?? e.source} ${e.lines.map((l) => l.account_name).join(" ")}`
           .toLowerCase()
-          .includes(q),
+          .includes(q) || e.id === savedEntryId,
       )
     : journal;
 
@@ -590,10 +603,13 @@ function LibroDiario({ journal }: { journal: JournalEntryFull[] }) {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por cuenta, detalle o tipo" />
       </div>
       <div className="diario-list">
+        {savedEntryId && !journal.some((entry) => entry.id === savedEntryId) && (
+          <p role="status">La partida se guardó, pero aún no aparece en esta vista. Actualiza la página para cargarla.</p>
+        )}
         {filtered.map((e) => {
           const totalDebit = e.lines.reduce((s, l) => s + l.debit, 0);
           return (
-            <div className="diario-entry" key={e.id}>
+            <div className="diario-entry" key={e.id} ref={e.id === savedEntryId ? (node) => node?.scrollIntoView({ block: "center" }) : undefined}>
               <div className="diario-head">
                 <div>
                   <strong>{shortDate(e.entry_date)}</strong>
