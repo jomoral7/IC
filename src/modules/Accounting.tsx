@@ -198,6 +198,16 @@ export function Accounting({
     setManualError("");
   }
 
+  function selectManualAccount(id: number, account: Account) {
+    setManualEntry((current) => ({
+      ...current,
+      lines: current.lines.map((line) => line.id === id
+        ? { ...line, account_search: `${account.code} · ${account.name}`, account_id: account.id }
+        : line),
+    }));
+    setManualError("");
+  }
+
   function updateManualLine(id: number, field: "debit" | "credit", value: string) {
     setManualEntry((current) => ({
       ...current,
@@ -488,17 +498,38 @@ export function Accounting({
                   <div className="manual-journal-lines">
                     {manualEntry.lines.map((line, index) => (
                       <div className="manual-journal-line" key={line.id}>
-                        <label className="manual-journal-account">
-                          <span className="mobile-line-label">Cuenta</span>
-                          <input
-                            type="search"
-                            list={manualAccountListId.current}
-                            value={line.account_search}
-                            onChange={(event) => updateManualAccount(line.id, event.target.value)}
-                            placeholder="Buscar por código, nombre o tipo"
-                            aria-label={`Cuenta de la línea ${index + 1}`}
-                          />
-                        </label>
+                        <div className="manual-journal-account">
+                          <label>
+                            <span className="mobile-line-label">Cuenta</span>
+                            <input
+                              type="search"
+                              list={manualAccountListId.current}
+                              value={line.account_search}
+                              onChange={(event) => updateManualAccount(line.id, event.target.value)}
+                              placeholder="Buscar por código, nombre o tipo"
+                              aria-label={`Cuenta de la línea ${index + 1}`}
+                            />
+                          </label>
+                          {line.account_id ? (
+                            <small className="manual-account-selected">Cuenta seleccionada</small>
+                          ) : line.account_search.trim() ? (
+                            <div className="manual-account-suggestions">
+                              {journalAccounts
+                                .filter((account) => `${account.code} ${account.name} ${ACCOUNT_TYPE_LABEL[account.type]}`
+                                  .toLocaleLowerCase("es").includes(line.account_search.trim().toLocaleLowerCase("es")))
+                                .slice(0, 8)
+                                .map((account) => (
+                                  <button type="button" key={account.id} onClick={() => selectManualAccount(line.id, account)}>
+                                    {account.code} · {account.name} <small>{ACCOUNT_TYPE_LABEL[account.type]}</small>
+                                  </button>
+                                ))}
+                              {!journalAccounts.some((account) => `${account.code} ${account.name} ${ACCOUNT_TYPE_LABEL[account.type]}`
+                                .toLocaleLowerCase("es").includes(line.account_search.trim().toLocaleLowerCase("es"))) && (
+                                <span>No se encontró una cuenta activa.</span>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
                         <label>
                           <span className="mobile-line-label">Debe (L)</span>
                           <input
@@ -566,6 +597,7 @@ export function Accounting({
             </div>
             <div className="drawer-footer manual-journal-footer">
               {manualError && <p className="manual-journal-error" role="alert">{manualError}</p>}
+              {manualSaving && <p className="manual-journal-progress" role="status">Guardando la partida en contabilidad…</p>}
               <button className="secondary-button" onClick={() => setManualOpen(false)} disabled={manualSaving}>Cancelar</button>
               <button
                 className="primary-button"

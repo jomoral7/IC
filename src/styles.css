@@ -4925,6 +4925,44 @@ td:last-child {
   width: 100%;
   min-width: 0;
 }
+.manual-account-selected {
+  display: block;
+  margin-top: 4px;
+  color: #1f7a4d;
+  font-weight: 700;
+}
+.manual-account-suggestions {
+  display: grid;
+  gap: 3px;
+  max-height: 190px;
+  overflow-y: auto;
+  margin-top: 5px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+.manual-account-suggestions button {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  color: var(--navy);
+  cursor: pointer;
+}
+.manual-account-suggestions button:hover,
+.manual-account-suggestions button:focus-visible {
+  background: var(--paper);
+}
+.manual-account-suggestions small {
+  color: var(--muted);
+}
+.manual-account-suggestions > span {
+  padding: 7px 9px;
+  color: var(--muted);
+}
 .mobile-line-label {
   display: none;
 }
@@ -4983,6 +5021,12 @@ td:last-child {
 .manual-journal-footer .manual-journal-error {
   flex: 0 0 100%;
   margin: 0;
+}
+.manual-journal-progress {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--navy);
+  font-weight: 700;
 }
 @media (max-width: 640px) {
   .accounting-movement-drawer {
