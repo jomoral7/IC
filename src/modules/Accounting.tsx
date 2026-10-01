@@ -1,4 +1,4 @@
-import { Plus, Save, Search, X } from "lucide-react";
+import { Pencil, Plus, Save, Search, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { Account, AccountType, CashMovement, JournalEntryFull } from "../types";
 import { ACCOUNT_TYPE_LABEL } from "../types";
@@ -73,6 +73,7 @@ export function Accounting({
   journal,
   registerMovement,
   registerJournalEntry,
+  updateJournalEntry,
   saveAccount,
 }: {
   accounts: Account[];
@@ -80,6 +81,7 @@ export function Accounting({
   journal: JournalEntryFull[];
   registerMovement: (form: MovementForm) => Promise<void>;
   registerJournalEntry: (form: ManualJournalForm) => Promise<ManualJournalResult>;
+  updateJournalEntry: (entryId: string, form: ManualJournalForm) => Promise<ManualJournalResult>;
   saveAccount: (form: { code: string; name: string; type: AccountType }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<
@@ -91,6 +93,7 @@ export function Accounting({
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState("");
   const [savedEntryId, setSavedEntryId] = useState<string | null>(null);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [manualEntry, setManualEntry] = useState<ManualJournalDraft>(emptyManualJournal);
   const nextManualLineId = useRef(2);
   const manualAccountListId = useRef(`manual-journal-account-options-${Math.random().toString(36).slice(2)}`);
@@ -177,7 +180,28 @@ export function Accounting({
 
   function openManualJournal() {
     nextManualLineId.current = 2;
+    setEditingEntryId(null);
     setManualEntry(emptyManualJournal());
+    setManualError("");
+    setManualOpen(true);
+  }
+
+  function openManualJournalForEdit(entry: JournalEntryFull) {
+    if (entry.source !== "manual_entry") return;
+    const lines = entry.lines.map((line, index) => ({
+      id: index + 1,
+      account_id: line.account_id,
+      account_search: `${line.account_code} · ${line.account_name}`,
+      debit: line.debit > 0 ? String(line.debit) : "",
+      credit: line.credit > 0 ? String(line.credit) : "",
+    }));
+    nextManualLineId.current = Math.max(2, lines.length);
+    setEditingEntryId(entry.id);
+    setManualEntry({
+      entry_date: entry.entry_date,
+      memo: entry.memo ?? "",
+      lines,
+    });
     setManualError("");
     setManualOpen(true);
   }
@@ -240,7 +264,7 @@ export function Accounting({
     setManualSaving(true);
     setManualError("");
     try {
-      const result = await registerJournalEntry({
+      const payload: ManualJournalForm = {
         entry_date: manualEntry.entry_date,
         memo: manualEntry.memo.trim(),
         lines: validManualLines.map((line) => ({
@@ -249,10 +273,14 @@ export function Accounting({
           credit: line.creditCents / 100,
           description: manualEntry.memo.trim(),
         })),
-      });
+      };
+      const result = editingEntryId
+        ? await updateJournalEntry(editingEntryId, payload)
+        : await registerJournalEntry(payload);
       if (result.ok) {
         setManualOpen(false);
         setManualEntry(emptyManualJournal());
+        setEditingEntryId(null);
         setSavedEntryId(result.id ?? null);
         setTab("diario");
       } else {
@@ -365,7 +393,7 @@ export function Accounting({
           />
         )
       ) : tab === "diario" ? (
-        <LibroDiario journal={journal} savedEntryId={savedEntryId} />
+        <LibroDiario journal={journal} savedEntryId={savedEntryId} onEditManual={openManualJournalForEdit} />
       ) : tab === "mayor" ? (
         <LibroMayor journal={journal} />
       ) : tab === "resultados" ? (
@@ -449,7 +477,7 @@ export function Accounting({
             <div className="panel-heading">
               <div>
                 <p className="section-label">Contabilidad</p>
-                <h2>Nueva partida contable</h2>
+                <h2>{editingEntryId ? "Editar partida contable" : "Nueva partida contable"}</h2>
               </div>
               <button className="icon-button" onClick={() => setManualOpen(false)} aria-label="Cerrar partida">
                 <X size={18} />
@@ -597,14 +625,14 @@ export function Accounting({
             </div>
             <div className="drawer-footer manual-journal-footer">
               {manualError && <p className="manual-journal-error" role="alert">{manualError}</p>}
-              {manualSaving && <p className="manual-journal-progress" role="status">Guardando la partida en contabilidad…</p>}
+              {manualSaving && <p className="manual-journal-progress" role="status">{editingEntryId ? "Actualizando la partida en contabilidad…" : "Guardando la partida en contabilidad…"}</p>}
               <button className="secondary-button" onClick={() => setManualOpen(false)} disabled={manualSaving}>Cancelar</button>
               <button
                 className="primary-button"
                 onClick={() => void submitManualJournal()}
                 disabled={manualSaving}
               >
-                <Save size={17} /> {manualSaving ? "Guardando…" : "Guardar partida"}
+                <Save size={17} /> {manualSaving ? (editingEntryId ? "Actualizando…" : "Guardando…") : (editingEntryId ? "Guardar cambios" : "Guardar partida")}
               </button>
             </div>
           </aside>
@@ -614,7 +642,7 @@ export function Accounting({
   );
 }
 
-function LibroDiario({ journal, savedEntryId }: { journal: JournalEntryFull[]; savedEntryId: string | null }) {
+function LibroDiario({ journal, savedEntryId, onEditManual }: { journal: JournalEntryFull[]; savedEntryId: string | null; onEditManual: (entry: JournalEntryFull) => void }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -647,9 +675,22 @@ function LibroDiario({ journal, savedEntryId }: { journal: JournalEntryFull[]; s
                   <strong>{shortDate(e.entry_date)}</strong>
                   <span className="diario-memo">{e.memo ?? SOURCE_LABEL[e.source] ?? e.source}</span>
                 </div>
-                <span className={`stock-badge ${e.source === "void" ? "out" : "ok"}`}>
-                  {SOURCE_LABEL[e.source] ?? e.source}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {e.source === "manual_entry" && (
+                    <button
+                      type="button"
+                      className="icon-action"
+                      onClick={() => onEditManual(e)}
+                      aria-label={`Editar partida manual: ${e.memo ?? e.id}`}
+                      title="Editar partida manual"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  )}
+                  <span className={`stock-badge ${e.source === "void" ? "out" : "ok"}`}>
+                    {SOURCE_LABEL[e.source] ?? e.source}
+                  </span>
+                </div>
               </div>
               <table className="diario-table">
                 <thead>

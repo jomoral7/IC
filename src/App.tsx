@@ -2147,6 +2147,46 @@ export function App() {
     return { ok: true, id: typeof entryId === "string" ? entryId : undefined };
   }
 
+  async function updateJournalEntry(
+    entryId: string,
+    f: {
+      entry_date: string;
+      memo: string;
+      lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;
+    },
+  ): Promise<{ ok: boolean; error?: string; id?: string }> {
+    if (!supabase) {
+      setNotice("No hay conexión con la base de datos.");
+      return { ok: false, error: "No hay conexión con la base de datos." };
+    }
+    const totalDebit = f.lines.reduce((sum, line) => sum + line.debit, 0);
+    const { data: updatedId, error } = await supabase.rpc("update_manual_journal_entry", {
+      p_entry_id: entryId,
+      p_entry_date: f.entry_date,
+      p_memo: f.memo,
+      p_lines: f.lines,
+    });
+    if (error) {
+      console.warn("No se pudo actualizar la partida manual:", error.message);
+      setNotice(`No se pudo actualizar la partida: ${error.message}`);
+      return { ok: false, error: error.message };
+    }
+    const { error: auditError } = await logAudit(
+      "Editar partida manual",
+      `${f.memo} · ${f.lines.length} líneas · L ${totalDebit.toLocaleString("es-HN", { minimumFractionDigits: 2 })}`,
+    );
+    if (auditError) console.warn("La partida se actualizó, pero no se pudo registrar en auditoría:", auditError.message);
+    setNotice("Partida manual actualizada");
+    try {
+      const refreshed = await loadWorkspace();
+      if (!refreshed) setNotice("Partida actualizada. No se pudo refrescar el Libro Diario; recarga la página para verla.");
+    } catch (refreshError) {
+      console.warn("La partida se actualizó, pero falló la actualización de la vista:", refreshError);
+      setNotice("Partida actualizada. Recarga la página para verla en los libros.");
+    }
+    return { ok: true, id: typeof updatedId === "string" ? updatedId : entryId };
+  }
+
   async function saveAccount(f: { code: string; name: string; type: AccountType }) {
     if (!supabase) return;
     const normalSide = f.type === "asset" || f.type === "expense" ? "debit" : "credit";
@@ -2336,6 +2376,7 @@ export function App() {
             journal={journal}
             registerMovement={registerMovement}
             registerJournalEntry={registerJournalEntry}
+            updateJournalEntry={updateJournalEntry}
             saveAccount={saveAccount}
           />
         )}
