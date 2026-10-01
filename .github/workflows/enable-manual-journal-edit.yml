@@ -1,0 +1,154 @@
+name: Enable manual journal editing
+
+on:
+  push:
+    branches:
+      - edit-manual-journal-entries
+    paths:
+      - .github/workflows/enable-manual-journal-edit.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: edit-manual-journal-entries
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch manual journal editing
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"No se encontró el bloque esperado: {label}")
+              return text.replace(old, new, 1)
+
+          accounting_path = Path('src/modules/Accounting.tsx')
+          text = accounting_path.read_text(encoding='utf-8')
+
+          text = replace_once(
+              text,
+              'import { Plus, Save, Search, X } from "lucide-react";',
+              'import { Pencil, Plus, Save, Search, X } from "lucide-react";',
+              'import Pencil',
+          )
+
+          text = replace_once(
+              text,
+              '  registerJournalEntry,\n  saveAccount,',
+              '  registerJournalEntry,\n  updateJournalEntry,\n  saveAccount,',
+              'prop destructuring',
+          )
+          text = replace_once(
+              text,
+              '  registerJournalEntry: (form: ManualJournalForm) => Promise<ManualJournalResult>;\n  saveAccount:',
+              '  registerJournalEntry: (form: ManualJournalForm) => Promise<ManualJournalResult>;\n  updateJournalEntry: (entryId: string, form: ManualJournalForm) => Promise<ManualJournalResult>;\n  saveAccount:',
+              'prop type',
+          )
+
+          text = replace_once(
+              text,
+              '  const [savedEntryId, setSavedEntryId] = useState<string | null>(null);\n  const [manualEntry, setManualEntry] = useState<ManualJournalDraft>(emptyManualJournal);',
+              '  const [savedEntryId, setSavedEntryId] = useState<string | null>(null);\n  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);\n  const [manualEntry, setManualEntry] = useState<ManualJournalDraft>(emptyManualJournal);',
+              'editing state',
+          )
+
+          text = replace_once(
+              text,
+              '  function openManualJournal() {\n    nextManualLineId.current = 2;\n    setManualEntry(emptyManualJournal());\n    setManualError("");\n    setManualOpen(true);\n  }',
+              '''  function openManualJournal() {\n    nextManualLineId.current = 2;\n    setEditingEntryId(null);\n    setManualEntry(emptyManualJournal());\n    setManualError("");\n    setManualOpen(true);\n  }\n\n  function openManualJournalForEdit(entry: JournalEntryFull) {\n    if (entry.source !== "manual_entry") return;\n    const lines = entry.lines.map((line, index) => ({\n      id: index + 1,\n      account_id: line.account_id,\n      account_search: `${line.account_code} · ${line.account_name}`,\n      debit: line.debit > 0 ? String(line.debit) : "",\n      credit: line.credit > 0 ? String(line.credit) : "",\n    }));\n    nextManualLineId.current = Math.max(2, lines.length);\n    setEditingEntryId(entry.id);\n    setManualEntry({\n      entry_date: entry.entry_date,\n      memo: entry.memo ?? "",\n      lines,\n    });\n    setManualError("");\n    setManualOpen(true);\n  }''',
+              'open edit',
+          )
+
+          old_submit = '''      const result = await registerJournalEntry({\n        entry_date: manualEntry.entry_date,\n        memo: manualEntry.memo.trim(),\n        lines: validManualLines.map((line) => ({\n          account_id: line.account_id,\n          debit: line.debitCents / 100,\n          credit: line.creditCents / 100,\n          description: manualEntry.memo.trim(),\n        })),\n      });'''
+          new_submit = '''      const payload: ManualJournalForm = {\n        entry_date: manualEntry.entry_date,\n        memo: manualEntry.memo.trim(),\n        lines: validManualLines.map((line) => ({\n          account_id: line.account_id,\n          debit: line.debitCents / 100,\n          credit: line.creditCents / 100,\n          description: manualEntry.memo.trim(),\n        })),\n      };\n      const result = editingEntryId\n        ? await updateJournalEntry(editingEntryId, payload)\n        : await registerJournalEntry(payload);'''
+          text = replace_once(text, old_submit, new_submit, 'submit save/update')
+
+          text = replace_once(
+              text,
+              '        setManualOpen(false);\n        setManualEntry(emptyManualJournal());\n        setSavedEntryId(result.id ?? null);',
+              '        setManualOpen(false);\n        setManualEntry(emptyManualJournal());\n        setEditingEntryId(null);\n        setSavedEntryId(result.id ?? null);',
+              'reset editing',
+          )
+
+          text = replace_once(
+              text,
+              '<LibroDiario journal={journal} savedEntryId={savedEntryId} />',
+              '<LibroDiario journal={journal} savedEntryId={savedEntryId} onEditManual={openManualJournalForEdit} />',
+              'LibroDiario callback',
+          )
+
+          text = replace_once(
+              text,
+              '<h2>Nueva partida contable</h2>',
+              '<h2>{editingEntryId ? "Editar partida contable" : "Nueva partida contable"}</h2>',
+              'drawer title',
+          )
+
+          text = replace_once(
+              text,
+              '{manualSaving && <p className="manual-journal-progress" role="status">Guardando la partida en contabilidad…</p>}',
+              '{manualSaving && <p className="manual-journal-progress" role="status">{editingEntryId ? "Actualizando la partida en contabilidad…" : "Guardando la partida en contabilidad…"}</p>}',
+              'saving text',
+          )
+
+          text = replace_once(
+              text,
+              '<Save size={17} /> {manualSaving ? "Guardando…" : "Guardar partida"}',
+              '<Save size={17} /> {manualSaving ? (editingEntryId ? "Actualizando…" : "Guardando…") : (editingEntryId ? "Guardar cambios" : "Guardar partida")}',
+              'button text',
+          )
+
+          text = replace_once(
+              text,
+              'function LibroDiario({ journal, savedEntryId }: { journal: JournalEntryFull[]; savedEntryId: string | null }) {',
+              'function LibroDiario({ journal, savedEntryId, onEditManual }: { journal: JournalEntryFull[]; savedEntryId: string | null; onEditManual: (entry: JournalEntryFull) => void }) {',
+              'LibroDiario signature',
+          )
+
+          old_badge = '''                <span className={`stock-badge ${e.source === "void" ? "out" : "ok"}`}>\n                  {SOURCE_LABEL[e.source] ?? e.source}\n                </span>'''
+          new_badge = '''                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>\n                  {e.source === "manual_entry" && (\n                    <button\n                      type="button"\n                      className="icon-action"\n                      onClick={() => onEditManual(e)}\n                      aria-label={`Editar partida manual: ${e.memo ?? e.id}`}\n                      title="Editar partida manual"\n                    >\n                      <Pencil size={15} />\n                    </button>\n                  )}\n                  <span className={`stock-badge ${e.source === "void" ? "out" : "ok"}`}>\n                    {SOURCE_LABEL[e.source] ?? e.source}\n                  </span>\n                </div>'''
+          text = replace_once(text, old_badge, new_badge, 'edit button')
+
+          accounting_path.write_text(text, encoding='utf-8')
+
+          app_path = Path('src/App.tsx')
+          app = app_path.read_text(encoding='utf-8')
+
+          marker = '''  async function saveAccount(f: { code: string; name: string; type: AccountType }) {'''
+          update_fn = '''  async function updateJournalEntry(\n    entryId: string,\n    f: {\n      entry_date: string;\n      memo: string;\n      lines: Array<{ account_id: string; debit: number; credit: number; description: string }>;\n    },\n  ): Promise<{ ok: boolean; error?: string; id?: string }> {\n    if (!supabase) {\n      setNotice("No hay conexión con la base de datos.");\n      return { ok: false, error: "No hay conexión con la base de datos." };\n    }\n    const totalDebit = f.lines.reduce((sum, line) => sum + line.debit, 0);\n    const { data: updatedId, error } = await supabase.rpc("update_manual_journal_entry", {\n      p_entry_id: entryId,\n      p_entry_date: f.entry_date,\n      p_memo: f.memo,\n      p_lines: f.lines,\n    });\n    if (error) {\n      console.warn("No se pudo actualizar la partida manual:", error.message);\n      setNotice(`No se pudo actualizar la partida: ${error.message}`);\n      return { ok: false, error: error.message };\n    }\n    const { error: auditError } = await logAudit(\n      "Editar partida manual",\n      `${f.memo} · ${f.lines.length} líneas · L ${totalDebit.toLocaleString("es-HN", { minimumFractionDigits: 2 })}`,\n    );\n    if (auditError) console.warn("La partida se actualizó, pero no se pudo registrar en auditoría:", auditError.message);\n    setNotice("Partida manual actualizada");\n    try {\n      const refreshed = await loadWorkspace();\n      if (!refreshed) setNotice("Partida actualizada. No se pudo refrescar el Libro Diario; recarga la página para verla.");\n    } catch (refreshError) {\n      console.warn("La partida se actualizó, pero falló la actualización de la vista:", refreshError);\n      setNotice("Partida actualizada. Recarga la página para verla en los libros.");\n    }\n    return { ok: true, id: typeof updatedId === "string" ? updatedId : entryId };\n  }\n\n'''
+          if marker not in app:
+              raise SystemExit('No se encontró el punto para updateJournalEntry')
+          app = app.replace(marker, update_fn + marker, 1)
+
+          app = replace_once(
+              app,
+              '            registerJournalEntry={registerJournalEntry}\n            saveAccount={saveAccount}',
+              '            registerJournalEntry={registerJournalEntry}\n            updateJournalEntry={updateJournalEntry}\n            saveAccount={saveAccount}',
+              'Accounting update prop',
+          )
+          app_path.write_text(app, encoding='utf-8')
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Commit verified change
+        shell: bash
+        run: |
+          rm .github/workflows/enable-manual-journal-edit.yml
+          git config user.name "Codex"
+          git config user.email "codex@openai.com"
+          git add -A
+          git commit -m "Allow editing manual journal entries"
+          git push origin HEAD:edit-manual-journal-entries
