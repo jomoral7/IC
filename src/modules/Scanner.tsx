@@ -67,8 +67,8 @@ export function ScannerModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="qr-modal scanner-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-button modal-close" onClick={onClose}>
+      <div className="qr-modal scanner-modal" role="dialog" aria-modal="true" aria-label="Escanear código" onClick={(e) => e.stopPropagation()}>
+        <button className="icon-button modal-close" aria-label="Cerrar ventana" onClick={onClose}>
           <X size={18} />
         </button>
         <p className="section-label">Escanear</p>

@@ -1,0 +1,28 @@
+:root {
+  /* Inversiones del Caribe: shared visual decisions, without process state. */
+  --ic-brand: #14384c;
+  --ic-brand-hover: #0d2b3d;
+  --ic-accent: #d9a13b;
+  --ic-text: #0b2533;
+  --ic-muted: #586b78;
+  --ic-surface: #ffffff;
+  --ic-background: #f4f7fb;
+  --ic-border: #cbd6e0;
+  --ic-danger: #a8322d;
+  --ic-success: #176344;
+  --ic-warning: #805511;
+  --ic-space-1: 4px;
+  --ic-space-2: 8px;
+  --ic-space-3: 12px;
+  --ic-space-4: 16px;
+  --ic-space-5: 24px;
+  --ic-space-6: 32px;
+  --ic-radius-sm: 6px;
+  --ic-radius: 8px;
+  --ic-radius-lg: 12px;
+  --ic-shadow: 0 2px 8px rgb(11 37 51 / 5%);
+  --ic-focus: #0b668e;
+  --ic-control-height: 42px;
+  --ic-font: "Work Sans", system-ui, sans-serif;
+  --ic-heading-font: "Archivo", system-ui, sans-serif;
+}

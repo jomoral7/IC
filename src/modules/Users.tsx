@@ -228,13 +228,13 @@ function CreateDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer user-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer user-drawer" role="dialog" aria-modal="true" aria-label="Usuario" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Nuevo acceso</p>
             <h2>Crear usuario</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -270,7 +270,7 @@ function CreateDrawer({
         </div>
         </div>
         <div className="drawer-footer user-drawer-footer">
-          <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+          <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
             <Save size={18} /> {saving ? "Creando..." : "Crear usuario"}
           </button>
         </div>
@@ -302,13 +302,13 @@ function EditDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer user-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer user-drawer" role="dialog" aria-modal="true" aria-label="Usuario" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Editar usuario</p>
             <h2>{user.username ?? user.full_name}</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -334,7 +334,7 @@ function EditDrawer({
         </div>
         </div>
         <div className="drawer-footer user-drawer-footer">
-          <button className="primary-button wide" disabled={saving} onClick={() => void submit()}>
+          <button className="primary-button wide" disabled={saving} aria-busy={saving} onClick={() => void submit()}>
             <Save size={18} /> {saving ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
@@ -366,8 +366,8 @@ function ResetModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="qr-modal adjustment-modal user-reset-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-button modal-close" onClick={onClose}>
+      <div className="qr-modal adjustment-modal user-reset-modal" role="dialog" aria-modal="true" aria-label="Cambiar contraseña" onClick={(e) => e.stopPropagation()}>
+        <button className="icon-button modal-close" aria-label="Cerrar ventana" onClick={onClose}>
           <X size={18} />
         </button>
         <p className="section-label">Resetear contrasena</p>
@@ -381,7 +381,7 @@ function ResetModal({
         </div>
         </div>
         <div className="user-reset-footer">
-          <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+          <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
             <KeyRound size={18} /> {saving ? "Aplicando..." : "Cambiar contrasena"}
           </button>
         </div>

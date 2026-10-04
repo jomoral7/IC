@@ -2284,7 +2284,7 @@ export function App() {
           </div>
         </header>
         {notice && (
-          <div className="notice">
+          <div className="notice" role="status">
             <span>{notice}</span>
             <button onClick={() => setNotice("")}>Cerrar</button>
           </div>
@@ -2489,7 +2489,7 @@ function AuthScreen() {
           Contraseña
           <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </label>
-        {error && <div className="error-box">{error}</div>}
+        {error && <div className="error-box" role="alert">{error}</div>}
         <button className="primary-button wide" onClick={submit}>
           Entrar
         </button>

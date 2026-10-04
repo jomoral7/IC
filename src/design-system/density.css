@@ -1,0 +1,151 @@
+/* Operational density: retain content, DOM order and all existing actions. */
+@media (min-width: 761px) {
+  .panel { padding: 16px; }
+  .panel-heading { margin-bottom: 12px; }
+  .form-grid { gap: 10px 14px; margin-bottom: 12px; }
+  .form-section { margin-bottom: 14px; }
+  .form-section h3 { margin: 0 0 10px; padding-bottom: 6px; }
+  .drawer .panel-heading { padding-top: 12px; padding-bottom: 10px; margin-bottom: 12px; }
+  .drawer-footer { padding-top: 10px; padding-bottom: 12px; }
+  .drawer input, .drawer select { min-height: 36px; padding-top: 7px; padding-bottom: 7px; }
+  .drawer .primary-button, .drawer .secondary-button { min-height: 36px; padding: 8px 12px; }
+  .product-drawer .label-scan-btn { width: auto; margin-top: 6px; margin-bottom: 12px; }
+  .product-drawer .form-grid.three { grid-template-columns: repeat(6, minmax(0,1fr)); }
+  .product-drawer .form-grid.three > * { grid-column: span 2; min-width: 0; }
+  .product-drawer .form-grid.three > .span-2 { grid-column: span 3; }
+  .product-drawer .form-section:has(.margin-hint) .form-grid.three > * { grid-column: span 2; }
+  .product-drawer .form-section:has(.margin-hint) .form-grid.three > .span-2 { grid-column: span 4; }
+  .inv-summary { gap: 12px; margin-bottom: 12px; }
+  .inv-stat { padding: 12px 16px; }
+  .inv-toolbar { gap: 8px; margin-bottom: 12px; }
+  .inv-toolbar > .inv-search { flex: 1 1 420px; min-width: min(420px,100%); }
+  .inv-search { padding: 0 10px; min-height: 38px; }
+  .inv-search input { min-height: 36px; padding: 6px 0; }
+  .inv-filter-select, .inv-switch, .inv-date-sort { min-height: 36px; }
+  .inv-filter-select select { min-height: 30px; }
+  .inv-filters button { min-height: 30px; padding: 6px 10px; }
+  .inv-actions button { min-height: 36px; padding: 8px 12px; }
+  .inv-table .row-actions, .table-wrap .row-actions, .row-actions { display: inline-flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; width: max-content; min-width: max-content; }
+  .inv-table .row-actions button, .row-actions button { width: 32px; height: 32px; min-height: 32px; }
+  .inv-table th, .inv-table td { padding: 8px 10px; }
+  .inv-table .actions-col { width: 148px; }
+  .inv-table .inv-description-cell { min-width: 220px; }
+  .inv-table .stock-badge { display: inline-flex; width: auto; white-space: nowrap; }
+  .product-picker-header { padding: 12px 16px; }
+  .product-picker-search { padding: 10px 16px; }
+  .product-picker-search .inv-search { padding: 0 10px; }
+  .product-picker-search .inv-search input:focus-visible { outline: none; }
+  .product-picker-filters { padding: 8px 16px; gap: 8px; }
+  .product-picker-filter { height: 36px; }
+  .product-picker .catalog-list button { padding: 8px 16px; min-height: 64px; }
+  .product-picker-head { padding: 8px 16px; }
+}
+/* Keep required markers on the label line, rather than a separate grid row. */
+.form-grid label:has(> .req) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; row-gap: 6px; }
+.form-grid label:has(> .req) > input, .form-grid label:has(> .req) > select { flex: 0 0 100%; width: 100%; min-width: 0; }
+@media (min-width: 761px) and (max-width: 1000px) {
+  .product-drawer .form-grid.three { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .product-drawer .form-grid.three > *, .product-drawer .form-grid.three > .span-2,
+  .product-drawer .form-section:has(.margin-hint) .form-grid.three > *, .product-drawer .form-section:has(.margin-hint) .form-grid.three > .span-2 { grid-column: auto; }
+}
+
+.ic-preview > *, .full-panel, .inv-table-wrap { min-width: 0; max-width: 100%; }
+.inv-table-wrap { overflow-x: auto; }
+
+@media (min-width:761px) and (max-width:1000px) {
+.my-sales-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.my-sales-summary .sales-equation-card { grid-column: 1 / -1; }
+}
+@media (max-width:760px) {
+.inv-summary { gap: 8px; }
+.inv-summary .inv-stat { padding: 10px; gap: 4px; }
+.inv-summary .inv-stat strong { font-size: 20px; }
+.inv-summary .inv-stat:last-child { grid-column: 1 / -1; }
+.inv-toolbar { gap: 8px; }
+.inv-toolbar > .inv-search { padding: 0 10px; min-height: 44px; }
+.inv-toolbar > .inv-search input { min-height: 42px; padding: 6px 0; }
+.inv-toolbar > .inv-facet-filters { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.inv-toolbar .inv-filter-select { gap: 0; padding: 6px 8px; }
+.inv-toolbar .inv-filter-select select { min-height: 32px; padding: 4px 0; }
+.inv-toolbar .inv-filter-select:last-child { grid-column: 1 / -1; }
+.inv-toolbar > .inv-filters { display: flex; flex-wrap: nowrap; overflow-x: auto; }
+.inv-toolbar .inv-filters button { min-height: 36px; padding: 6px 10px; white-space: nowrap; }
+.inv-toolbar > .inv-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; width: 100%; }
+.inv-toolbar .inv-actions button { width: 100%; min-width: 0; min-height: 44px; padding: 8px; font-size: 13px; }
+.inv-toolbar > .inv-switch { min-height: 36px; }
+}
+
+@media (min-width:761px) {
+.seller-drawer { width: min(760px,100%); }
+.seller-drawer .form-grid.one { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.seller-drawer .form-grid.one > label:has(select), .seller-drawer .form-grid.one > .check-row { grid-column: 1 / -1; }
+.seller-drawer .goals-editor { margin-top: 16px; padding-top: 12px; }
+.seller-drawer .goal-add { gap: 8px; }
+}
+
+.user-drawer { height: auto; max-height: calc(100dvh - 24px); grid-template-rows: auto minmax(0,auto) auto; }
+.user-drawer-body { max-height: calc(100dvh - 200px); }
+@media (min-width:761px) {
+.user-drawer { width: min(680px,100%); }
+.user-drawer .form-grid.one { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.user-drawer .check-row { grid-column: 1 / -1; }
+.seller-commission-modal { height: auto; max-height: min(85dvh,760px); }
+.seller-commission-modal .commission-list, .seller-commission-modal .goals-panel { flex: 0 1 auto; max-height: calc(85dvh - 210px); }
+}
+@media (max-width:760px) {
+.user-drawer { height: auto; max-height: 100dvh; }
+}
+
+.material-drawer { height: auto; max-height: calc(100dvh - 24px); grid-template-rows: auto minmax(0,auto) auto; }
+.material-drawer-body { align-content: start; max-height: calc(100dvh - 190px); padding-bottom: 12px; }
+.material-auto-code { padding: 8px 10px; }
+@media (min-width:761px) {
+.material-drawer .form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.material-drawer .form-grid > label.span-2 { grid-column: auto; }
+}
+@media (max-width:760px) {
+.material-drawer { max-height: 100dvh; }
+.pos-options .discount-control { grid-template-columns: 90px minmax(0,1fr); grid-template-rows: auto 44px; }
+.pos-options .discount-label { text-align: left; }
+.pos-options .discount-choice { grid-column: 1; width: 90px; height: 44px; }
+.pos-options .discount-choice button { min-height: 40px; }
+.pos-options .discount-input { grid-column: 2; min-width: 0; }
+.pos-options .discount-input > div { height: 44px; }
+.pos-options .discount-input input { min-width: 0; width: 100%; }
+}
+
+.accounting-entry-drawer, .accounting-movement-drawer, .account-drawer { height: auto; max-height: calc(100dvh - 24px); grid-template-rows: auto minmax(0,auto) auto; }
+.manual-journal-body, .accounting-movement-body, .account-drawer-body { max-height: calc(100dvh - 220px); align-content: start; }
+@media (min-width:761px) {
+.accounting-movement-body { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.accounting-movement-body > label:last-child { grid-column: 1 / -1; }
+}
+@media (max-width:760px) {
+.accounting-entry-drawer, .accounting-movement-drawer, .account-drawer { max-height: 100dvh; }
+}
+
+.offer-form { padding: 12px 14px; margin-bottom: 16px; }
+.offer-controls { gap: 10px; margin: 10px 0; }
+.offer-picker { padding: 10px; }
+.offer-picker-list { max-height: 240px; gap: 4px; }
+.offer-pick-item { min-height: 52px; padding: 6px 8px; }
+.offer-pick-item input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; }
+.offer-list-title { margin: 12px 0 8px; }
+.panel:has(.offer-form) > .empty-work { padding: 16px; }
+
+.drawer .panel-heading, .invoice-modal-head { flex-wrap: nowrap; }
+.drawer .panel-heading > div, .invoice-modal-head > div { flex: 1; min-width: 0; }
+@media (max-width:760px) {
+.drawer[aria-label="Crear variantes"] .form-grid.two { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.drawer[aria-label="Crear variantes"] .form-grid.two > .span-2 { grid-column: 1 / -1; }
+.drawer[aria-label="Crear variantes"] .variant-row:not(.variant-head) { grid-template-columns: minmax(0,1fr) minmax(0,1fr) 44px; align-items: center; gap: 8px; }
+.drawer[aria-label="Crear variantes"] .variant-row > select, .drawer[aria-label="Crear variantes"] .variant-row > input:not([type="number"]) { grid-column: 1; grid-row: 1; }
+.drawer[aria-label="Crear variantes"] .variant-row > input[type="number"] { grid-column: 2; grid-row: 1; }
+.drawer[aria-label="Crear variantes"] .variant-row > button { grid-column: 3; grid-row: 1; }
+.drawer[aria-label="Crear variantes"] .variant-row > .color-field { grid-column: 1 / -1; grid-row: 2; }
+.drawer[aria-label="Crear variantes"] .variant-head { display: none; }
+}
+
+.drawer .panel-heading, .invoice-modal-head { flex-direction: row; align-items: flex-start; }
+.drawer[aria-label="Crear variantes"] .form-grid > label { min-width: 0; }
+.drawer[aria-label="Crear variantes"] .form-grid input, .drawer[aria-label="Crear variantes"] .form-grid select, .drawer[aria-label="Crear variantes"] .combobox { width: 100%; min-width: 0; }

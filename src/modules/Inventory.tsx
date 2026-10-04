@@ -794,8 +794,8 @@ function PedidoModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="qr-modal adjustment-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-button modal-close" onClick={onClose}>
+      <div className="qr-modal adjustment-modal" role="dialog" aria-modal="true" aria-label="Inventario: pedido o ajuste" onClick={(e) => e.stopPropagation()}>
+        <button className="icon-button modal-close" aria-label="Cerrar ventana" onClick={onClose}>
           <X size={18} />
         </button>
         <p className="section-label">Pedido de mercaderia</p>
@@ -837,7 +837,7 @@ function PedidoModal({
             <p className="adj-result">
               Quedaran <strong>{product.incoming + Math.max(0, qty)}</strong> unidades en camino
             </p>
-            <button className="primary-button wide" disabled={qty <= 0 || saving} onClick={() => void submitOrder()}>
+            <button className="primary-button wide" disabled={qty <= 0 || saving} aria-busy={saving} onClick={() => void submitOrder()}>
               <Truck size={18} /> {saving ? "Registrando..." : "Registrar pedido"}
             </button>
           </>
@@ -898,7 +898,7 @@ function PedidoModal({
               Nuevo stock: <strong>{product.stock + Math.max(0, arrived)}</strong> · Total: <strong>{lps(arrived * unitCost)}</strong>
             </p>
             <p className="mini-note">El costo se promedia con las existencias actuales. Las ventas anteriores conservan su costo original.</p>
-            <button className="primary-button wide" disabled={arrived <= 0 || saving} onClick={() => void submitReceive()}>
+            <button className="primary-button wide" disabled={arrived <= 0 || saving} aria-busy={saving} onClick={() => void submitReceive()}>
               <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada"}
             </button>
             {order && (
@@ -1058,13 +1058,13 @@ function ProductDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer product-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer product-drawer" role="dialog" aria-modal="true" aria-label="Producto" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">{product ? "Editar producto" : "Nuevo producto"}</p>
             <h2>{product ? product.name : "Crear referencia"}</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -1191,7 +1191,7 @@ function ProductDrawer({
         </div>
 
         <div className="drawer-footer">
-          <button className="primary-button wide" disabled={!canSave || saving} onClick={() => void submit()}>
+          <button className="primary-button wide" disabled={!canSave || saving} aria-busy={saving} onClick={() => void submit()}>
             <Save size={18} /> {saving ? "Guardando..." : "Guardar producto"}
           </button>
         </div>
@@ -1230,8 +1230,8 @@ function AdjustmentModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="qr-modal adjustment-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-button modal-close" onClick={onClose}>
+      <div className="qr-modal adjustment-modal" role="dialog" aria-modal="true" aria-label="Inventario: pedido o ajuste" onClick={(e) => e.stopPropagation()}>
+        <button className="icon-button modal-close" aria-label="Cerrar ventana" onClick={onClose}>
           <X size={18} />
         </button>
         <p className="section-label">Ajuste de inventario</p>
@@ -1273,7 +1273,7 @@ function AdjustmentModal({
         <p className="adj-result">
           Nuevo stock: <strong>{resulting}</strong>
         </p>
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+        <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <Save size={18} /> Registrar ajuste
         </button>
       </div>
@@ -1336,13 +1336,13 @@ function PurchaseModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer wide-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer wide-drawer" role="dialog" aria-modal="true" aria-label="Entrada de pedido" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Entrada de mercaderia</p>
             <h2>Registrar compra recibida</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -1418,6 +1418,7 @@ function PurchaseModal({
                       <input
                         type="number"
                         min={1}
+                        aria-label={`Cantidad de ${line.product.name}`}
                         value={line.qty}
                         onChange={(event) => updateLine(line.product.id, { qty: Number(event.target.value) })}
                       />
@@ -1426,6 +1427,7 @@ function PurchaseModal({
                       <input
                         type="number"
                         min={0}
+                        aria-label={`Costo unitario de ${line.product.name}`}
                         value={line.unit_cost}
                         onChange={(event) => updateLine(line.product.id, { unit_cost: Number(event.target.value) })}
                       />
@@ -1438,7 +1440,7 @@ function PurchaseModal({
                     </td>
                     <td>{lps(line.qty * line.unit_cost)}</td>
                     <td>
-                      <button className="icon-button" onClick={() => removeLine(line.product.id)}>
+                      <button className="icon-button" aria-label={`Quitar ${line.product.name}`} onClick={() => removeLine(line.product.id)}>
                         <X size={16} />
                       </button>
                     </td>
@@ -1453,7 +1455,7 @@ function PurchaseModal({
           <div><span>Total compra</span><strong>{lps(total)}</strong></div>
           <small>Se registrará contra {paymentAccount === "bank" ? "Banco" : "Caja"}.</small>
         </div>
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+        <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada y sumar stock"}
         </button>
       </aside>
@@ -1539,13 +1541,13 @@ function MatrixModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Crear variantes" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Alta rapida</p>
             <h2>Crear por matriz (talla x color)</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -1621,10 +1623,11 @@ function MatrixModal({
             {rows.map((r, i) => (
               <div className="variant-row" key={i}>
                 {r.sizeCustom ? (
-                  <input value={r.size} autoFocus placeholder="Escribe la talla" onChange={(e) => setRow(i, { size: e.target.value })} />
+                  <input aria-label={`Talla de variante ${i + 1}`} value={r.size} autoFocus placeholder="Escribe la talla" onChange={(e) => setRow(i, { size: e.target.value })} />
                 ) : (
                   <select
                     value={sizeCatalog.includes(r.size) ? r.size : ""}
+                    aria-label={`Talla de variante ${i + 1}`}
                     onChange={(e) => (e.target.value === "__otro__" ? setRow(i, { sizeCustom: true, size: "" }) : setRow(i, { size: e.target.value }))}
                   >
                     <option value="">Talla…</option>
@@ -1641,6 +1644,7 @@ function MatrixModal({
                   type="number"
                   min={0}
                   value={r.qty}
+                  aria-label={`Cantidad de variante ${i + 1}`}
                   onChange={(e) => setRow(i, { qty: Math.max(0, Number(e.target.value)) })}
                 />
                 <button className="icon-action danger" title="Quitar" onClick={() => removeRow(i)} disabled={rows.length <= 1}>
@@ -1651,7 +1655,7 @@ function MatrixModal({
           </div>
         </div>
 
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+        <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <Save size={18} /> {saving ? "Creando..." : `Crear ${validRows.length} variante(s)`}
         </button>
       </aside>

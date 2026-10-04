@@ -128,13 +128,13 @@ function PartyDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer" role="dialog" aria-modal="true" aria-label="Cliente o proveedor" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">{party ? `Editar ${label}` : `Nuevo ${label}`}</p>
             <h2>{party ? party.name : `Crear ${label}`}</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -152,7 +152,7 @@ function PartyDrawer({
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Opcional" />
           </label>
         </div>
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+        <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <Save size={18} /> {saving ? "Guardando..." : "Guardar"}
         </button>
       </aside>

@@ -150,7 +150,7 @@ export function Offers({
                 <Search size={15} />
                 <input value={pickQuery} onChange={(e) => setPickQuery(e.target.value)} placeholder="Buscar producto" />
               </div>
-              <select value={pickCat} onChange={(e) => setPickCat(e.target.value)}>
+              <select aria-label="Filtrar categoría" value={pickCat} onChange={(e) => setPickCat(e.target.value)}>
                 <option value="">Toda categoria</option>
                 {categories.map((c) => (
                   <option key={c} value={c}>
@@ -158,7 +158,7 @@ export function Offers({
                   </option>
                 ))}
               </select>
-              <select value={pickBrand} onChange={(e) => setPickBrand(e.target.value)}>
+              <select aria-label="Filtrar marca" value={pickBrand} onChange={(e) => setPickBrand(e.target.value)}>
                 <option value="">Toda marca</option>
                 {brands.map((b) => (
                   <option key={b} value={b}>
@@ -200,7 +200,7 @@ export function Offers({
           Afecta a <strong>{affected}</strong> producto(s).
         </p>
         <div className="offer-actions">
-          <button className="primary-button" disabled={!canApply} onClick={() => void apply(pct)}>
+          <button className="primary-button" disabled={!canApply} aria-busy={saving} onClick={() => void apply(pct)}>
             <Tag size={16} /> Aplicar {pct}% de descuento
           </button>
           <button className="secondary-button" disabled={!canApply} onClick={() => void apply(0)}>

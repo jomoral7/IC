@@ -406,13 +406,13 @@ export function Accounting({
 
       {open && (
         <div className="drawer-backdrop">
-          <aside className="drawer small-drawer accounting-movement-drawer">
+          <aside className="drawer small-drawer accounting-movement-drawer" role="dialog" aria-modal="true" aria-label="Ingreso o gasto">
             <div className="panel-heading">
               <div>
                 <p className="section-label">Nuevo registro</p>
                 <h2>{form.type === "income" ? "Registrar ingreso" : "Registrar gasto"}</h2>
               </div>
-              <button className="icon-button" onClick={() => setOpen(false)}>
+              <button className="icon-button" aria-label="Cerrar ventana" onClick={() => setOpen(false)}>
                 <X size={18} />
               </button>
             </div>
@@ -473,7 +473,7 @@ export function Accounting({
       )}
       {manualOpen && (
         <div className="drawer-backdrop">
-          <aside className="drawer accounting-entry-drawer">
+          <aside className="drawer accounting-entry-drawer" role="dialog" aria-modal="true" aria-label="Partida contable">
             <div className="panel-heading">
               <div>
                 <p className="section-label">Contabilidad</p>
@@ -631,6 +631,7 @@ export function Accounting({
                 className="primary-button"
                 onClick={() => void submitManualJournal()}
                 disabled={manualSaving}
+                aria-busy={manualSaving}
               >
                 <Save size={17} /> {manualSaving ? (editingEntryId ? "Actualizando…" : "Guardando…") : (editingEntryId ? "Guardar cambios" : "Guardar partida")}
               </button>
@@ -1029,7 +1030,7 @@ function CatalogView({
                 <p className="section-label">Catalogo</p>
                 <h2 id="new-account-title">Nueva cuenta</h2>
               </div>
-              <button className="icon-button" onClick={() => setOpen(false)}>
+              <button className="icon-button" aria-label="Cerrar ventana" onClick={() => setOpen(false)}>
                 <X size={18} />
               </button>
             </div>

@@ -181,9 +181,9 @@ export function Dashboard({
         )}
         {period === "custom" && (
           <div className="dash-custom">
-            <input type="date" value={cFrom} onChange={(e) => setCFrom(e.target.value)} />
+            <input type="date" aria-label="Desde" value={cFrom} onChange={(e) => setCFrom(e.target.value)} />
             <span>a</span>
-            <input type="date" value={cTo} onChange={(e) => setCTo(e.target.value)} />
+            <input type="date" aria-label="Hasta" value={cTo} onChange={(e) => setCTo(e.target.value)} />
           </div>
         )}
       </div>

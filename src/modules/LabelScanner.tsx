@@ -93,13 +93,13 @@ export function LabelScanner({ onApply, onClose }: { onApply: (fields: LabelFiel
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer" role="dialog" aria-modal="true" aria-label="Leer etiqueta" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">Etiqueta</p>
             <h2>Leer etiqueta con foto</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>

@@ -26,3 +26,9 @@ supabase/.temp/
 
 .vercel
 .env*
+
+# Local visual reference and sample data: never publish.
+/design-system.html
+/src/design-system/preview.tsx
+/src/design-system/preview.css
+/src/design-system/screens.tsx

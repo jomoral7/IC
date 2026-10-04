@@ -106,13 +106,13 @@ export function InvoiceDetailModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="invoice-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="invoice-modal" role="dialog" aria-modal="true" aria-label="Detalle de factura" onClick={(e) => e.stopPropagation()}>
         <div className="invoice-modal-head">
           <div>
             <p className="section-label">Factura #{doc.document_number}</p>
             <h2>{doc.customer_name ?? "Cliente final"}</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -290,19 +290,20 @@ export function InvoiceDetailModal({
                       <span className="inv-code">{l.code ?? "N/A"}</span>
                     </div>
                     <div className="qty-stepper">
-                      <button onClick={() => setQty(l.product_id, l.qty - 1)} disabled={l.qty <= 1}><Minus size={14} /></button>
+                      <button aria-label={`Reducir cantidad de ${l.name}`} onClick={() => setQty(l.product_id, l.qty - 1)} disabled={l.qty <= 1}><Minus size={14} /></button>
                       <span>{l.qty}</span>
-                      <button onClick={() => setQty(l.product_id, l.qty + 1)}><Plus size={14} /></button>
+                      <button aria-label={`Aumentar cantidad de ${l.name}`} onClick={() => setQty(l.product_id, l.qty + 1)}><Plus size={14} /></button>
                     </div>
                     <input
                       className="edit-price"
+                      aria-label={`Precio de ${l.name}`}
                       type="number"
                       min={0}
                       value={l.unit_price}
                       onChange={(e) => setPrice(l.product_id, Number(e.target.value))}
                     />
                     <b>{lps(l.qty * l.unit_price)}</b>
-                    <button className="ticket-remove" onClick={() => removeLine(l.product_id)}><Trash2 size={15} /></button>
+                    <button className="ticket-remove" aria-label={`Quitar ${l.name}`} onClick={() => removeLine(l.product_id)}><Trash2 size={15} /></button>
                   </div>
                 ))
               )}
@@ -314,7 +315,7 @@ export function InvoiceDetailModal({
             </div>
             <div className="invoice-actions">
               <button className="secondary-button" onClick={() => { setLines(items); setMode("view"); }}>Cancelar</button>
-              <button className="primary-button" disabled={lines.length === 0 || busy} onClick={() => void saveEdit()}>
+              <button className="primary-button" disabled={lines.length === 0 || busy} aria-busy={busy} onClick={() => void saveEdit()}>
                 <Save size={16} /> {busy ? "Guardando..." : "Guardar cambios"}
               </button>
             </div>

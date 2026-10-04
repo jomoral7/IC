@@ -1,0 +1,22 @@
+/* Animations only follow existing presentation states. */
+@keyframes ic-spin { to { transform: rotate(360deg); } }
+@keyframes ic-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ic-fade { from { opacity: 0; } to { opacity: 1; } }
+.drawer-backdrop { animation: ic-fade 140ms ease-out; }
+.drawer, .invoice-modal, .qr-modal, .notice, .error-box, .manual-journal-error, .ic-feedback { animation: ic-enter 180ms ease-out; }
+.notice:not(.product-save-notice) { border-color: var(--ic-border); border-left-color: var(--ic-brand); }
+.product-save-notice::before, .ic-feedback--success::before { content: "✓"; flex-shrink: 0; color: #168452; font-size: 20px; }
+.product-save-notice.is-error::before, .ic-feedback--error::before { content: "!"; flex-shrink: 0; color: var(--ic-danger); font-weight: 800; font-size: 20px; }
+.ic-feedback { display: flex; gap: 12px; align-items: center; padding: 14px 16px; border: 1px solid var(--ic-border); border-radius: 8px; }
+.ic-feedback--success { background: #f4fcf7; border-color: #b9ddc8; }
+.ic-feedback--error { background: #fff7f5; border-color: #f1c2bd; }
+.loading-screen { align-content: center; justify-items: center; gap: 16px; color: #fff; }
+.loading-screen::before, button[aria-busy="true"]::before, .manual-journal-progress::before, .ic-feedback--loading::before { content: ""; display: inline-block; flex-shrink: 0; width: 18px; height: 18px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: ic-spin 800ms linear infinite; }
+.loading-screen::before { width: 32px; height: 32px; }
+button[aria-busy="true"] > svg { display: none; }
+.manual-journal-progress { display: flex; align-items: center; gap: 10px; }
+button { transition: background-color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+.drawer-backdrop, .drawer, .invoice-modal, .qr-modal, .notice, .error-box, .manual-journal-error, .ic-feedback, .loading-screen::before, button[aria-busy="true"]::before, .manual-journal-progress::before, .ic-feedback--loading::before { animation: none; }
+button { transition: none; }
+}

@@ -216,13 +216,13 @@ function SellerPanel({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <div className="invoice-modal seller-commission-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="invoice-modal seller-commission-modal" role="dialog" aria-modal="true" aria-label="Comisiones y metas" onClick={(e) => e.stopPropagation()}>
         <div className="invoice-modal-head">
           <div>
             <p className="section-label">Comisiones</p>
             <h2>{seller.name}</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -460,13 +460,13 @@ function SellerDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer small-drawer seller-drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer small-drawer seller-drawer" role="dialog" aria-modal="true" aria-label="Vendedor" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">{seller ? "Editar vendedor" : "Nuevo vendedor"}</p>
             <h2>{seller ? seller.name : "Crear vendedor"}</h2>
           </div>
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -509,7 +509,7 @@ function SellerDrawer({
             <span>Vendedor activo</span>
           </label>
         </div>
-        <button className="primary-button wide" disabled={!canSave} onClick={() => void submit()}>
+        <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <Save size={18} /> {saving ? "Guardando..." : "Guardar vendedor"}
         </button>
 
