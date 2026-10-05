@@ -4,6 +4,7 @@ import type { CartLine, CashCollectionMethod, PackagingMaterial, PackagingUsage,
 import { lps, stockState } from "../lib/format";
 import { EmptyWork } from "../ui";
 import { ScannerModal } from "./Scanner";
+import type { ShippingGuide, ShippingGuideUsage } from "../types";
 
 function matchesCode(product: Product, code: string): boolean {
   const c = code.trim().toLowerCase();
@@ -29,6 +30,7 @@ export type POSInvoicePreview = {
   discount: number;
   tax: number;
   total: number;
+  shippingTotal?: number;
 };
 
 const COLLECTION_METHODS: Array<{ value: CashCollectionMethod; label: string; detail: string }> = [
@@ -45,6 +47,7 @@ export function POS({
   customers,
   sellers,
   packagingMaterials,
+  shippingGuides = [],
   issueSale,
   total,
   lockSeller = false,
@@ -61,6 +64,7 @@ export function POS({
   customers: Party[];
   sellers: Seller[];
   packagingMaterials: PackagingMaterial[];
+  shippingGuides?: ShippingGuide[];
   issueSale: (
     customerName: string,
     sellerId: string | null,
@@ -70,6 +74,8 @@ export function POS({
     discountAmount: number,
     applyTax: boolean,
     packagingUsage: PackagingUsage[],
+    shippingUsage?: ShippingGuideUsage[],
+    shippingBankReceived?: boolean,
   ) => Promise<any>;
   total: number;
   /** Si es true (rol vendedor), el vendedor queda fijo y no puede elegir otro. */
@@ -108,6 +114,9 @@ export function POS({
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [cashReceived, setCashReceived] = useState("");
   const [packagingUsage, setPackagingUsage] = useState<PackagingUsage[]>([]);
+  const [shippingUsage,setShippingUsage] = useState<ShippingGuideUsage[]>([]);
+  const [shippingBankReceived,setShippingBankReceived] = useState(false);
+  const shippingTotal=shippingUsage.reduce((sum,u)=>sum+u.quantity*u.unit_price,0);
 
   const subtotal = total;
   const hasManualDiscount = (line: CartLine) => (line.manual_discount_pct ?? 0) > 0 || (line.manual_discount_amount ?? 0) > 0;
@@ -214,8 +223,10 @@ export function POS({
   async function submit() {
     if (cart.length === 0 || issuing) return;
     setIssuing(true);
-    const doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, collectionMethod, discountPct, discountAmount, applyTax, packagingUsage.filter((item) => item.quantity > 0));
-    setIssuing(false);
+    let doc;
+    try { doc = await issueSale(customerName.trim(), effectiveSellerId || null, terms, collectionMethod, discountPct, discountAmount, applyTax, packagingUsage.filter((item) => item.quantity > 0),shippingUsage,shippingBankReceived); }
+    finally { setIssuing(false); }
+    if(!doc)return;
     if (doc) {
       setLastSale(doc);
       setCheckoutOpen(false);
@@ -232,11 +243,13 @@ export function POS({
     setCollectionMethod("cash");
     setCashReceived("");
     setPackagingUsage([]);
+    setShippingUsage([]);setShippingBankReceived(false);
   }
 
   function openCheckout() {
     if (cart.length === 0) return;
     setCashReceived(grandTotal.toFixed(2));
+    setShippingBankReceived(false);
     setCheckoutOpen(true);
   }
 
@@ -273,6 +286,7 @@ export function POS({
       discount: discountAmt,
       tax,
       total: grandTotal,
+      shippingTotal,
     });
   }
 
@@ -300,7 +314,7 @@ export function POS({
               <ShoppingCart size={18} />
               <strong>Resumen de venta</strong>
             </span>
-            <span className="summary-total">{lps(grandTotal)}</span>
+            <span className="summary-total">{lps(grandTotal+shippingTotal)}</span>
             <span className="summary-count">{cart.reduce((sum, line) => sum + line.qty, 0)} piezas</span>
             <ChevronDown className="summary-chevron" size={18} />
           </button>
@@ -493,6 +507,16 @@ export function POS({
           )}
         </section>
 
+        <section className="pos-packaging-panel shipping-pos-panel" aria-label="Guías de envío para el cliente">
+          <div className="checkout-packaging-head"><div><span>Envío al cliente</span><strong>Guías de envío</strong></div><small>Se cobran por Banco, aparte de la mercadería.</small></div>
+          {shippingGuides.length===0 ? <p className="pos-packaging-empty">Registra las guías ya compradas en Empaque → Guías de envío.</p> : <div className="checkout-packaging-list">{shippingGuides.map(g=><label key={g.id} className="checkout-packaging-item"><div><strong>{g.name}</strong><span>{g.stock} disponibles · {lps(g.price)} por guía</span></div><input type="number" min={0} max={g.stock} step={1} value={shippingUsage.find(u=>u.guide_id===g.id)?.quantity ?? 0} aria-label={`Cantidad de guías ${g.name}`} onChange={e=>{
+            const quantity=Math.max(0,Math.min(g.stock,Math.trunc(Number(e.target.value)||0)));
+            setShippingBankReceived(false);
+            setShippingUsage(current=>[...current.filter(u=>u.guide_id!==g.id),...(quantity>0?[{guide_id:g.id,quantity,unit_price:g.price}]:[])]);
+          }}/></label>)}</div>}
+          {shippingTotal>0 && <div className="checkout-packaging-cost"><span>Guías a cobrar en Banco</span><strong>{lps(shippingTotal)}</strong></div>}
+        </section>
+
         <div className="pos-checkout-dock">
           <div className="sale-breakdown">
             <div className="brk-row">
@@ -511,8 +535,8 @@ export function POS({
             )}
           </div>
           <div className="total-box">
-            <span>Total</span>
-            <strong>{lps(grandTotal)}</strong>
+            <span>{shippingTotal>0 ? "Mercadería + envío" : "Total"}</span>
+            <strong>{lps(grandTotal+shippingTotal)}</strong>
           </div>
           {canPreviewInvoice && (
             <button className="secondary-button pos-preview-button" disabled={cart.length === 0} onClick={openInvoicePreview} title="Vista previa sin registrar la venta" aria-label="Vista previa de factura sin registrar la venta">
@@ -520,16 +544,16 @@ export function POS({
             </button>
           )}
           <button className="primary-button pos-charge-button" disabled={cart.length === 0 || issuing} onClick={openCheckout}>
-            <Banknote size={18} /> Cobrar {lps(grandTotal)}
+            <Banknote size={18} /> Cobrar {lps(grandTotal+shippingTotal)}
           </button>
-          <button className="secondary-button pos-clear-button" title="Vaciar carrito" onClick={() => { setCart([]); setLastSale(null); }}>
+          <button className="secondary-button pos-clear-button" title="Vaciar carrito" onClick={() => { setCart([]); setLastSale(null); setShippingUsage([]);setShippingBankReceived(false); }}>
             <X size={17} /> Limpiar
           </button>
         </div>
         {lastSale && (
           <div className="last-sale-note">
             <strong>✓ Venta #{lastSale.document_number} generada</strong>
-            <span>Total L {Number(lastSale.total).toLocaleString("es-HN")}</span>
+            <span>Total {lps(Number(lastSale.total)+Number(lastSale.shipping_total ?? 0))}</span>
             <button className="secondary-button wide" onClick={() => printReceipt(lastSale)}>
               <FileText size={16} /> Ver / imprimir comprobante
             </button>
@@ -630,7 +654,7 @@ export function POS({
             <header className="checkout-modal-head">
               <div>
                 <span>Finalizar venta</span>
-                <h2 id="checkout-title">Cobrar {lps(grandTotal)}</h2>
+                <h2 id="checkout-title">Cobrar {lps(grandTotal+shippingTotal)}</h2>
               </div>
               <button className="icon-button" disabled={issuing} aria-label="Cerrar cobro" onClick={() => setCheckoutOpen(false)}><X size={18} /></button>
             </header>
@@ -656,7 +680,7 @@ export function POS({
                 {collectionMethod === "cash" ? (
                   <div className="checkout-cash-panel">
                     <label>
-                      <span>Monto recibido</span>
+                      <span>{shippingTotal>0 ? "Efectivo recibido por mercadería" : "Monto recibido"}</span>
                       <div className="money-input"><b>L</b><input autoFocus type="number" min={0} step="0.01" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} /></div>
                     </label>
                     <div className={`change-box ${cashIsShort ? "short" : ""}`}>
@@ -682,12 +706,13 @@ export function POS({
               <div><span>Subtotal</span><b>{lps(subtotal)}</b></div>
               {discountAmt > 0 && <div><span>Descuento</span><b>-{lps(discountAmt)}</b></div>}
               {tax > 0 && <div><span>ISV 15%</span><b>{lps(tax)}</b></div>}
-              <div className="checkout-review-total"><span>Total</span><strong>{lps(grandTotal)}</strong></div>
+              {shippingTotal>0 && <><div><span>Mercadería</span><b>{lps(grandTotal)}</b></div><div><span>Guías de envío · Banco</span><b>{lps(shippingTotal)}</b></div><label className="check-row shipping-bank-confirm"><input type="checkbox" checked={shippingBankReceived} onChange={e=>setShippingBankReceived(e.target.checked)}/><span>Confirmo que recibí {lps(shippingTotal)} por las guías en Banco</span></label></>}
+              <div className="checkout-review-total"><span>Total cliente</span><strong>{lps(grandTotal+shippingTotal)}</strong></div>
             </div>
 
             <footer className="checkout-actions">
               <button className="secondary-button" disabled={issuing} onClick={() => setCheckoutOpen(false)}>Cancelar</button>
-              <button className="primary-button" disabled={issuing || creditNeedsCustomer || cashIsShort} onClick={() => void submit()}>
+              <button className="primary-button" aria-busy={issuing} disabled={issuing || creditNeedsCustomer || cashIsShort || (shippingTotal>0 && !shippingBankReceived)} onClick={() => void submit()}>
                 <FileText size={18} /> {issuing ? "Registrando..." : "Confirmar y generar factura"}
               </button>
             </footer>

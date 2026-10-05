@@ -222,6 +222,10 @@ export type PackagingMaterialForm = {
 /** Consumo interno de empaque asociado a una venta, invisible para el cliente. */
 export type PackagingUsage = { material_id: string; quantity: number };
 
+export type ShippingGuide = { id: string; name: string; price: number; stock: number; min_stock: number; receivable_account_id: string; active: boolean };
+export type ShippingGuideForm = { name: string; price: number; initial_stock: number; min_stock: number; receivable_account_id: string; initial_purchase: boolean; entry_date: string };
+export type ShippingGuideUsage = { guide_id: string; quantity: number; unit_price: number };
+
 /** Pedido de reabastecimiento interno para bolsas, cajas, etiquetas y otros insumos. */
 export type PackagingStockRequest = {
   id: string;

@@ -149,3 +149,8 @@
 .drawer .panel-heading, .invoice-modal-head { flex-direction: row; align-items: flex-start; }
 .drawer[aria-label="Crear variantes"] .form-grid > label { min-width: 0; }
 .drawer[aria-label="Crear variantes"] .form-grid input, .drawer[aria-label="Crear variantes"] .form-grid select, .drawer[aria-label="Crear variantes"] .combobox { width: 100%; min-width: 0; }
+.shipping-guide-drawer { width: min(680px,100%); }
+.shipping-bank-confirm { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.shipping-bank-confirm input { width: 20px; height: 20px; min-height: 20px; flex-shrink: 0; }
+.shipping-invoice-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px; border: 1px solid var(--ic-border); border-radius: 8px; margin-bottom: 12px; }
+.shipping-invoice-summary small { flex-basis: 100%; color: var(--ic-muted); }

@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import type { PackagingMaterial, PackagingMaterialForm, PackagingStockRequest, Party } from "../types";
 import { lps, stockState } from "../lib/format";
 import { EmptyWork } from "../ui";
+import { ShippingGuides } from "./ShippingGuides";
+import type { Account, ShippingGuide, ShippingGuideForm } from "../types";
 
 const emptyForm = (): PackagingMaterialForm => ({
   name: "",
@@ -26,6 +28,7 @@ export function Packaging({
   receiveOrder,
   cancelOrder,
   deleteMaterial,
+  shippingGuides = [], accounts = [], saveShippingGuide, receiveShippingGuides, archiveShippingGuide,
 }: {
   materials: PackagingMaterial[];
   requests: PackagingStockRequest[];
@@ -35,7 +38,12 @@ export function Packaging({
   receiveOrder: (request: PackagingStockRequest, quantity: number, unitCost: number, paymentAccount: "cash" | "bank") => Promise<void>;
   cancelOrder: (request: PackagingStockRequest) => Promise<void>;
   deleteMaterial: (material: PackagingMaterial) => Promise<void>;
+  shippingGuides?: ShippingGuide[]; accounts?: Account[];
+  saveShippingGuide?: (form: ShippingGuideForm,id?:string)=>Promise<boolean>;
+  receiveShippingGuides?: (id:string,quantity:number,purchase:boolean,date:string)=>Promise<boolean>;
+  archiveShippingGuide?: (id:string)=>Promise<void>;
 }) {
+  const [tab,setTab] = useState<"materials"|"shipping">("materials");
   const [editing, setEditing] = useState<PackagingMaterial | null>(null);
   const [creating, setCreating] = useState(false);
   const [buying, setBuying] = useState<PackagingMaterial | null>(null);
@@ -50,6 +58,8 @@ export function Packaging({
 
   return (
     <>
+      <div className="tab-row" role="tablist" aria-label="Empaque y envíos"><button role="tab" aria-selected={tab==="materials"} className={tab==="materials" ? "active" : ""} onClick={()=>setTab("materials")}>Materiales de empaque</button><button role="tab" aria-selected={tab==="shipping"} className={tab==="shipping" ? "active" : ""} onClick={()=>setTab("shipping")}>Guías de envío</button></div>
+      {tab==="shipping" ? (saveShippingGuide && receiveShippingGuides && archiveShippingGuide ? <ShippingGuides guides={shippingGuides} accounts={accounts} onSave={saveShippingGuide} onReceive={receiveShippingGuides} onArchive={archiveShippingGuide}/> : <EmptyWork title="Guías de envío" text="Esta vista de referencia no permite registrar guías."/>) : <>
       <section className="packaging-summary">
         <div className="inv-stat"><span>Materiales activos</span><strong>{materials.length}</strong></div>
         <div className="inv-stat"><span>Unidades disponibles</span><strong>{materials.reduce((sum, material) => sum + material.stock, 0)}</strong></div>
@@ -85,6 +95,7 @@ export function Packaging({
       </section>
       {(creating || editing) && <MaterialDrawer material={editing} onClose={() => { setCreating(false); setEditing(null); }} onSave={saveMaterial} />}
       {buying && <PackagingOrderDrawer material={buying} requests={requests.filter((request) => request.material_id === buying.id)} suppliers={suppliers} onClose={() => setBuying(null)} onOrder={createOrder} onReceive={receiveOrder} onCancel={cancelOrder} />}
+      </>}
     </>
   );
 }

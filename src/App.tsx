@@ -39,6 +39,7 @@ import { Offers } from "./modules/Offers";
 import { MySales } from "./modules/MySales";
 import { InvoiceDetailModal, type InvoiceItem } from "./modules/InvoiceDetail";
 import { Packaging } from "./modules/Packaging";
+import type { ShippingGuide, ShippingGuideForm, ShippingGuideUsage } from "./types";
 
 const modules = [
   { label: "Dashboard", icon: BarChart3 },
@@ -96,6 +97,7 @@ export function App() {
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterial[]>([]);
   const [packagingRequests, setPackagingRequests] = useState<PackagingStockRequest[]>([]);
+  const [shippingGuides,setShippingGuides] = useState<ShippingGuide[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const query = "";
   const [notice, setNotice] = useState("");
@@ -184,7 +186,7 @@ export function App() {
       }
     }
 
-    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes, packagingRes, packagingStockRes, packagingRequestRes] =
+    const [productRes, stockRes, supplierRes, customerRes, locationRes, documentRes, kardexRes, userRes, sellerRes, requestRes, commissionRes, goalRes, bonusRes, accountRes, movementRes, salesItemsRes, auditRes, packagingRes, packagingStockRes, packagingRequestRes, shippingRes] =
       await Promise.all([
         loadAllProducts(),
         supabase.from("stock_levels").select("product_id, quantity, location_id").limit(20000),
@@ -219,6 +221,7 @@ export function App() {
         supabase.from("packaging_materials").select("*").eq("active", true).order("name"),
         supabase.from("packaging_stock_levels").select("material_id, quantity, location_id"),
         supabase.from("packaging_stock_requests").select("id, material_id, location_id, requested_quantity, received_quantity, status, supplier_id, requested_at, received_at, notes").in("status", ["pending", "ordered", "partial"]).order("requested_at", { ascending: false }),
+        supabase.from("shipping_guides").select("*").eq("active",true).order("name"),
       ]);
 
     if (productRes.error) setNotice(productRes.error.message);
@@ -272,6 +275,7 @@ export function App() {
       unit_cost: Number(material.unit_cost ?? 0),
     })) as PackagingMaterial[]);
     setPackagingRequests((packagingRequestRes.data ?? []) as PackagingStockRequest[]);
+    setShippingGuides((shippingRes.data ?? []).map(g=>({...g,price:Number(g.price),stock:Number(g.stock),min_stock:Number(g.min_stock)})) as ShippingGuide[]);
     setSuppliers((supplierRes.data ?? []) as Party[]);
     setCustomers((customerRes.data ?? []) as Party[]);
     setLocations((locationRes.data ?? []) as Location[]);
@@ -915,6 +919,28 @@ export function App() {
     await loadWorkspace();
   }
 
+  /** Guides were already purchased and posted: only maintain the catalog and quantities. */
+  async function saveShippingGuide(form:ShippingGuideForm,id?:string):Promise<boolean> {
+    if (!supabase || !form.name.trim() || !Number.isFinite(form.price) || form.price<=0 || !Number.isInteger(form.initial_stock) || form.initial_stock<0 || !Number.isInteger(form.min_stock) || form.min_stock<0) return false;
+    const payload={name:form.name.trim(),price:form.price,min_stock:form.min_stock,receivable_account_id:form.receivable_account_id};
+    const {error}=id ? await supabase.from("shipping_guides").update(payload).eq("id",id) : await supabase.rpc("create_shipping_guide",{p_form:{...payload,stock:form.initial_stock},p_record_purchase:form.initial_purchase,p_entry_date:form.entry_date});
+    if(error){setNotice(error.message);return false;}
+    await logAudit("Guías de envío",`${id ? "Actualizó" : "Creó"} ${payload.name}`);
+    setNotice(!id && form.initial_purchase && form.initial_stock>0 ? "Guía y partida de compra registradas." : "Guía guardada sin repetir compras existentes."); await loadWorkspace();return true;
+  }
+  async function receiveShippingGuides(id:string,quantity:number,purchase:boolean,date:string):Promise<boolean> {
+    if(!supabase || !Number.isInteger(quantity) || quantity<=0)return false;
+    const {error}=purchase ? await supabase.rpc("record_shipping_guide_purchase",{p_guide_id:id,p_quantity:quantity,p_entry_date:date}) : await supabase.rpc("receive_prepaid_shipping_guides",{p_guide_id:id,p_quantity:quantity});
+    if(error){setNotice(error.message);return false;}
+    await logAudit("Existencias de guías",`${purchase ? "Compró" : "Agregó existencias contabilizadas de"} ${quantity} guías`);setNotice(purchase ? "Compra y existencias registradas: Debe cuenta por recuperar, Haber Banco." : "Existencias actualizadas sin repetir la compra.");await loadWorkspace();return true;
+  }
+  async function archiveShippingGuide(id:string) {
+    if(!supabase)return;
+    const {error}=await supabase.from("shipping_guides").update({active:false}).eq("id",id);
+    if(error){setNotice(error.message);return;}
+    await logAudit("Guías de envío","Archivó una guía conservando su historial");setNotice("Guía archivada");await loadWorkspace();
+  }
+
   /** Crea o actualiza una referencia de empaque. El stock inicial se contabiliza como una compra. */
   async function savePackagingMaterial(form: PackagingMaterialForm, id?: string) {
     if (!supabase || !form.name.trim()) return;
@@ -1299,8 +1325,13 @@ export function App() {
     discountAmount = 0,
     applyTax = false,
     packagingUsage: PackagingUsage[] = [],
+    shippingUsage: ShippingGuideUsage[] = [],
+    shippingBankReceived = false,
   ) {
     if (!supabase || cart.length === 0) return;
+    if(shippingUsage.length && (!shippingBankReceived || shippingUsage.some(u=>!Number.isInteger(u.quantity) || u.quantity<=0 || !shippingGuides.some(g=>g.id===u.guide_id && g.stock>=u.quantity && g.price===u.unit_price)))) {
+      setNotice("Revisa las existencias de guías y confirma su cobro en Banco.");return;
+    }
     if (cart.some((line) => line.qty > line.stock)) {
       setNotice("Una o más prendas ya no tienen suficiente stock. Recarga el inventario e intenta de nuevo.");
       return;
@@ -1336,9 +1367,7 @@ export function App() {
     const tax = applyTax ? Number((taxable * 0.15).toFixed(2)) : 0;
     const total = taxable + tax;
     const documentNumber = String(Date.now()).slice(-6);
-    const { data: document, error } = await supabase
-      .from("documents")
-      .insert({
+    const documentPayload = {
         kind: "sale",
         document_number: documentNumber,
         created_by_name: currentUserName(),
@@ -1352,9 +1381,10 @@ export function App() {
         tax,
         total,
         paid_amount: paymentTerms === "cash" ? total : 0,
-      })
-      .select("*")
-      .single();
+      };
+    const {data:document,error}=shippingUsage.length
+      ? await supabase.rpc("create_sale_with_shipping_guides",{p_document:documentPayload,p_guides:shippingUsage,p_bank_received:shippingBankReceived}).single()
+      : await supabase.from("documents").insert(documentPayload).select("*").single();
     if (error) {
       setNotice(error.message);
       return;
@@ -1480,6 +1510,7 @@ export function App() {
       "invoice_voids", "stock_requests", "stock_adjustments", "inventory_movements",
       "packaging_materials", "packaging_stock_levels", "packaging_movements", "sale_packaging_usage",
       "seller_commissions", "seller_bonus_payments", "chart_of_accounts", "journal_entries", "journal_lines",
+      "shipping_guides", "sale_shipping_guides",
     ];
     const dump: Record<string, any> = { _meta: { app: "Inversiones del Caribe", generated_at: new Date().toISOString() } };
     for (const t of tables) {
@@ -1506,10 +1537,11 @@ export function App() {
 
   // Orden de tablas respetando dependencias (padres antes que hijos).
   const RESTORE_ORDER = [
-    "inventory_locations", "chart_of_accounts", "products", "sellers", "parties", "seller_goals",
+    "inventory_locations", "chart_of_accounts", "shipping_guides", "products", "sellers", "parties", "seller_goals",
     "stock_levels", "documents", "document_items", "payments", "invoice_voids", "stock_requests",
     "stock_adjustments", "inventory_movements", "seller_commissions", "seller_bonus_payments",
     "packaging_materials", "packaging_stock_levels", "packaging_movements", "sale_packaging_usage",
+    "sale_shipping_guides",
     "journal_entries", "journal_lines",
   ];
 
@@ -1595,7 +1627,7 @@ export function App() {
     customer?: string,
     dateStr?: string,
     internal?: { sellerName: string | null; commission: number },
-    amounts?: { subtotal: number; discount: number; tax: number },
+    amounts?: { subtotal: number; discount: number; tax: number; shipping?: number },
     options?: { openView?: boolean; preview?: boolean; paymentTerms?: "cash" | "credit" },
   ) {
     const openView = options?.openView ?? false;
@@ -1743,6 +1775,12 @@ export function App() {
       y += 6;
     }
 
+    if ((amounts?.shipping ?? 0)>0) {
+      y+=18;
+      pdf.setFont("helvetica","normal");pdf.setFontSize(10);pdf.setTextColor("#14384C");
+      pdf.text("Guias de envio (Banco)",360,y);
+      pdf.text(`L ${Number(amounts?.shipping).toLocaleString("es-HN")}`,482,y);
+    }
     // Total justo debajo del ultimo producto (no fijo al pie)
     const boxY = y + 16;
     pdf.setDrawColor("#E4D9C4");
@@ -1754,7 +1792,7 @@ export function App() {
     pdf.setFontSize(14);
     pdf.setTextColor("#14384C");
     pdf.text("TOTAL", 78, boxY + 30);
-    pdf.text(`L ${total.toLocaleString("es-HN")}`, 462, boxY + 30);
+    pdf.text(`L ${(total+(amounts?.shipping ?? 0)).toLocaleString("es-HN")}`, 462, boxY + 30);
     pdf.setDrawColor("#D9A13B");
     pdf.setLineWidth(4);
     pdf.line(56, boxY + 62, 556, boxY + 62);
@@ -1830,6 +1868,7 @@ export function App() {
         subtotal: Number(doc.subtotal ?? doc.total),
         discount: Number(doc.discount ?? 0),
         tax: Number(doc.tax ?? 0),
+        shipping: Number(doc.shipping_total ?? 0),
       },
       { openView, paymentTerms: doc.payment_terms === "credit" ? "credit" : "cash" },
     );
@@ -1843,7 +1882,7 @@ export function App() {
       payload.customerName || "Cliente final",
       new Date().toLocaleDateString("es-HN"),
       undefined,
-      { subtotal: payload.subtotal, discount: payload.discount, tax: payload.tax },
+      { subtotal: payload.subtotal, discount: payload.discount, tax: payload.tax, shipping:payload.shippingTotal },
       { openView: true, preview: true, paymentTerms: payload.paymentTerms },
     );
   }
@@ -2326,6 +2365,7 @@ export function App() {
             customers={customers}
             sellers={sellers}
             packagingMaterials={packagingMaterials}
+            shippingGuides={shippingGuides}
             issueSale={issueSale}
             total={cartTotal}
             lockSeller={currentRole === "sales"}
@@ -2358,6 +2398,7 @@ export function App() {
         {selectedModule === "Empaque" && (
           <Packaging
             materials={packagingMaterials}
+            shippingGuides={shippingGuides} accounts={accounts} saveShippingGuide={saveShippingGuide} receiveShippingGuides={receiveShippingGuides} archiveShippingGuide={archiveShippingGuide}
             requests={packagingRequests}
             suppliers={suppliers}
             saveMaterial={savePackagingMaterial}

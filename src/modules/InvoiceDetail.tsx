@@ -136,10 +136,11 @@ export function InvoiceDetailModal({
           </div>
           <div>
             <span>Total facturado</span>
-            <strong className="big">{lps(Number(doc.total))}</strong>
+            <strong className="big">{lps(Number(doc.total)+Number(doc.shipping_total ?? 0))}</strong>
           </div>
         </div>
 
+        {Number(doc.shipping_total ?? 0)>0 && <div className="shipping-invoice-summary"><span>{voided ? "Guías de envío · cobro anulado" : "Guías de envío · cobradas en Banco"}</span><strong>{lps(Number(doc.shipping_total))}</strong><small>Importe separado de la mercadería y de la comisión del vendedor.</small></div>}
         {voided && <div className="void-banner">Factura ANULADA{doc.void_reason ? ` — ${doc.void_reason}` : ""}</div>}
 
         {commissionInfo && (
