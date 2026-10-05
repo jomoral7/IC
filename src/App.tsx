@@ -1389,10 +1389,16 @@ export function App() {
       return Number(line.sale_price.toFixed(2));
     };
     const subtotal = cart.reduce((sum, line) => sum + line.qty * unitPrice(line), 0);
+    const lineDiscount = Number(cart.reduce((sum, line) => {
+      const original = line.base_price ?? line.sale_price;
+      return sum + Math.max(0, original - unitPrice(line)) * line.qty;
+    }, 0).toFixed(2));
     // El descuento puede ser porcentaje o una cantidad fija, nunca superior al subtotal.
     const percentDiscount = subtotal * (Math.max(0, discountPct) / 100);
     const discount = Number(Math.min(subtotal, discountAmount > 0 ? discountAmount : percentDiscount).toFixed(2));
     const taxable = subtotal - discount;
+    const salesDiscount = Number((lineDiscount + discount).toFixed(2));
+    const grossSales = Number((taxable + salesDiscount).toFixed(2));
     const tax = applyTax ? Number((taxable * 0.15).toFixed(2)) : 0;
     const total = taxable + tax;
     const documentNumber = String(Date.now()).slice(-6);
@@ -1504,7 +1510,7 @@ export function App() {
 
     // Asiento contable de la venta (partida doble):
     //   Debe: Caja (efectivo), Banco (deposito/transferencia) o CxC (credito) = total
-    //   Haber: Ventas = taxable ; ISV por pagar = tax
+    //   Haber: Ventas = valor bruto; Debe: Descuentos y promociones = descuentos aplicados.
     //   Debe: Costo de venta = costo ; Haber: Inventario = costo
     const costTotal = cart.reduce((sum, line) => sum + line.qty * Number(line.real_cost ?? 0), 0);
     const debitAsset = paymentTerms === "cash"
@@ -1513,7 +1519,8 @@ export function App() {
     const saleDate = new Date(document.created_at).toISOString().slice(0, 10);
     await postJournal(saleDate, `Venta ${document.document_number}`, "sale", document.id, [
       { account_id: debitAsset, debit: total, credit: 0, description: `Venta ${document.document_number}` },
-      { account_id: accountIdByKey("sales"), debit: 0, credit: taxable, description: "Ventas" },
+      { account_id: accountIdByKey("sales"), debit: 0, credit: grossSales, description: "Ventas brutas" },
+      ...(salesDiscount > 0 ? [{ account_id: accountIdByKey("sales_discounts"), debit: salesDiscount, credit: 0, description: "Descuentos y promociones sobre ventas" }] : []),
       { account_id: accountIdByKey("tax_payable"), debit: 0, credit: tax, description: "ISV por pagar" },
       { account_id: accountIdByKey("cogs"), debit: costTotal, credit: 0, description: "Costo de venta" },
       { account_id: accountIdByKey("inventory"), debit: 0, credit: costTotal, description: "Salida de inventario" },
@@ -2023,6 +2030,9 @@ export function App() {
     const discount = Number(doc.discount ?? 0);
     const tax = Number(doc.tax ?? 0);
     const taxable = subtotal - discount;
+    const lineDiscount = Number(detailItems.reduce((sum, item) => sum + Number(item.discount ?? Math.max(0, Number(item.original_price ?? item.unit_price) - Number(item.unit_price)) * item.qty), 0).toFixed(2));
+    const salesDiscount = Number((lineDiscount + discount).toFixed(2));
+    const grossSales = Number((taxable + salesDiscount).toFixed(2));
     const total = Number(doc.total);
     const costTotal = detailItems.reduce(
       (s, it) => s + it.qty * Number(products.find((p) => p.id === it.product_id)?.real_cost ?? 0),
@@ -2032,7 +2042,8 @@ export function App() {
     const voidDate = new Date().toISOString().slice(0, 10);
     await postJournal(voidDate, `Anulacion factura ${doc.document_number}`, "void", doc.id, [
       { account_id: creditAsset, debit: 0, credit: total, description: `Anula venta ${doc.document_number}` },
-      { account_id: accountIdByKey("sales"), debit: taxable, credit: 0, description: "Reversa ventas" },
+      { account_id: accountIdByKey("sales"), debit: grossSales, credit: 0, description: "Reversa ventas brutas" },
+      ...(salesDiscount > 0 ? [{ account_id: accountIdByKey("sales_discounts"), debit: 0, credit: salesDiscount, description: "Reversa descuentos y promociones" }] : []),
       { account_id: accountIdByKey("tax_payable"), debit: tax, credit: 0, description: "Reversa ISV" },
       { account_id: accountIdByKey("cogs"), debit: 0, credit: costTotal, description: "Reversa costo de venta" },
       { account_id: accountIdByKey("inventory"), debit: costTotal, credit: 0, description: "Reingreso inventario" },
