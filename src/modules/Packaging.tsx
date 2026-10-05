@@ -16,6 +16,9 @@ const emptyForm = (): PackagingMaterialForm => ({
   min_stock: 0,
   unit_cost: 4.59,
   initial_stock: 0,
+  inventory_account_id: "",
+  initial_purchase: true,
+  entry_date: new Date().toLocaleDateString("en-CA"),
   payment_account: "bank",
 });
 
@@ -93,18 +96,20 @@ export function Packaging({
           </div>
         )}
       </section>
-      {(creating || editing) && <MaterialDrawer material={editing} onClose={() => { setCreating(false); setEditing(null); }} onSave={saveMaterial} />}
+      {(creating || editing) && <MaterialDrawer material={editing} accounts={accounts} onClose={() => { setCreating(false); setEditing(null); }} onSave={saveMaterial} />}
       {buying && <PackagingOrderDrawer material={buying} requests={requests.filter((request) => request.material_id === buying.id)} suppliers={suppliers} onClose={() => setBuying(null)} onOrder={createOrder} onReceive={receiveOrder} onCancel={cancelOrder} />}
       </>}
     </>
   );
 }
 
-function MaterialDrawer({ material, onClose, onSave }: { material: PackagingMaterial | null; onClose: () => void; onSave: (form: PackagingMaterialForm, id?: string) => Promise<void> }) {
-  const [form, setForm] = useState<PackagingMaterialForm>(() => material ? { name: material.name, kind: material.kind, description: material.description ?? "", size: material.size ?? "", color: material.color ?? "", unit: material.unit, min_stock: material.min_stock, unit_cost: material.unit_cost, initial_stock: 0, payment_account: "bank" } : emptyForm());
+function MaterialDrawer({ material, accounts, onClose, onSave }: { material: PackagingMaterial | null; accounts: Account[]; onClose: () => void; onSave: (form: PackagingMaterialForm, id?: string) => Promise<void> }) {
+  const inventoryAccounts = accounts.filter((account) => account.active && account.is_postable && account.type === "asset" && !["bank", "cash"].includes(account.system_key ?? ""));
+  const defaultAccount = inventoryAccounts.find((account) => account.system_key === "packaging_inventory")?.id ?? "";
+  const [form, setForm] = useState<PackagingMaterialForm>(() => material ? { name: material.name, kind: material.kind, description: material.description ?? "", size: material.size ?? "", color: material.color ?? "", unit: material.unit, min_stock: material.min_stock, unit_cost: material.unit_cost, initial_stock: 0, inventory_account_id: material.inventory_account_id ?? defaultAccount, initial_purchase: true, entry_date: new Date().toLocaleDateString("en-CA"), payment_account: "bank" } : { ...emptyForm(), inventory_account_id: defaultAccount });
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof PackagingMaterialForm>(key: K, value: PackagingMaterialForm[K]) => setForm((current) => ({ ...current, [key]: value }));
-  async function submit() { if (!form.name.trim() || saving) return; setSaving(true); await onSave(form, material?.id); setSaving(false); onClose(); }
+  async function submit() { if (!form.name.trim() || !form.inventory_account_id || saving) return; setSaving(true); await onSave(form, material?.id); setSaving(false); onClose(); }
   return <div className="drawer-backdrop" onMouseDown={onClose}><aside className="drawer small-drawer material-drawer" role="dialog" aria-modal="true" aria-labelledby="material-title" onMouseDown={(event) => event.stopPropagation()}>
     <header className="panel-heading"><div><p className="section-label">Materiales de empaque</p><h2 id="material-title">{material ? "Editar material" : "Nuevo material"}</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></header>
     <div className="material-drawer-body form-grid">
@@ -117,9 +122,10 @@ function MaterialDrawer({ material, onClose, onSave }: { material: PackagingMate
       <label className="span-2">Detalle<input value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Material, acabado o notas internas" /></label>
       <label>Mínimo (alerta)<input type="number" min={0} step="1" value={form.min_stock} onChange={(e) => set("min_stock", Number(e.target.value))} /></label>
       <label>Costo por {form.unit}<div className="money-input"><b>L</b><input type="number" min={0} step="0.01" value={form.unit_cost} onChange={(e) => set("unit_cost", Number(e.target.value))} /></div></label>
-      {!material && <><div className="material-section span-2"><strong>Compra inicial</strong><span>El valor queda como activo hasta que se use en una venta.</span></div><label>Unidades compradas<input type="number" min={0} step="1" value={form.initial_stock} onChange={(e) => set("initial_stock", Number(e.target.value))} /></label><label>Pagado desde<select value={form.payment_account} onChange={(e) => set("payment_account", e.target.value as "cash" | "bank")}><option value="bank">Banco</option><option value="cash">Caja</option></select></label></>}
+      <label className="span-2">Cuenta del activo de empaque<select disabled={!!material && material.stock > 0} value={form.inventory_account_id} onChange={(e) => set("inventory_account_id", e.target.value)}><option value="">Selecciona la cuenta</option>{inventoryAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}</select></label>
+      {!material && <><div className="material-section span-2"><strong>Entrada inicial</strong><span>Una compra nueva genera su partida; una entrada ya contabilizada solo controla existencias.</span></div><label className="span-2">Tipo de entrada<select value={form.initial_purchase ? "purchase" : "existing"} onChange={(e) => set("initial_purchase", e.target.value === "purchase")}><option value="purchase">Compra nueva · generar partida</option><option value="existing">Ya contabilizada · solo existencias</option></select></label><label>Unidades recibidas<input type="number" min={0} step="1" value={form.initial_stock} onChange={(e) => set("initial_stock", Number(e.target.value))} /></label>{form.initial_purchase ? <><label>Fecha de compra<input type="date" value={form.entry_date} onChange={(e) => set("entry_date", e.target.value)} /></label><label className="span-2">Pagado desde<select value={form.payment_account} onChange={(e) => set("payment_account", e.target.value as "cash" | "bank")}><option value="bank">Banco</option><option value="cash">Caja</option></select></label></> : <p className="mini-note span-2">No se generará otra partida. El saldo ya existente queda enlazado a esta cuenta de activo.</p>}</>}
     </div>
-    <footer className="drawer-footer"><button className="primary-button wide" disabled={!form.name.trim() || saving} aria-busy={saving} onClick={() => void submit()}><Save size={17} />{saving ? "Guardando..." : material ? "Guardar cambios" : "Registrar material"}</button></footer>
+    <footer className="drawer-footer"><button className="primary-button wide" disabled={!form.name.trim() || !form.inventory_account_id || saving} aria-busy={saving} onClick={() => void submit()}><Save size={17} />{saving ? "Guardando..." : material ? "Guardar cambios" : "Registrar material"}</button></footer>
   </aside></div>;
 }
 

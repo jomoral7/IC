@@ -201,6 +201,7 @@ export type PackagingMaterial = {
   unit: string;
   min_stock: number;
   unit_cost: number;
+  inventory_account_id: string;
   active: boolean;
   stock: number;
   stockByLocation: Record<string, number>;
@@ -216,6 +217,9 @@ export type PackagingMaterialForm = {
   min_stock: number;
   unit_cost: number;
   initial_stock: number;
+  inventory_account_id: string;
+  initial_purchase: boolean;
+  entry_date: string;
   payment_account: "cash" | "bank";
 };
 

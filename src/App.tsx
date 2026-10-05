@@ -953,6 +953,7 @@ export function App() {
       unit: form.unit || "unidad",
       min_stock: Math.max(0, Number(form.min_stock) || 0),
       unit_cost: Math.max(0, Number(form.unit_cost) || 0),
+      inventory_account_id: form.inventory_account_id || accountIdByKey("packaging_inventory"),
     };
     if (id) {
       const { error } = await supabase.from("packaging_materials").update(payload).eq("id", id);
@@ -971,7 +972,8 @@ export function App() {
     }
     const material = { ...data, stock: 0, stockByLocation: {} } as PackagingMaterial;
     if (Number(form.initial_stock) > 0) {
-      await registerPackagingPurchase(material, Number(form.initial_stock), Number(form.unit_cost), form.payment_account);
+      if (form.initial_purchase) await registerPackagingPurchase(material, Number(form.initial_stock), Number(form.unit_cost), form.payment_account, form.entry_date);
+      else await recordExistingPackagingStock(material, Number(form.initial_stock));
       return;
     }
     await logAudit("Crear material de empaque", `${data.name} (${data.internal_code})`);
@@ -979,12 +981,13 @@ export function App() {
     await loadWorkspace();
   }
 
-  /** Compra de bolsas, cajas u otro empaque: primero activo, pagado desde Banco o Caja. */
+  /** Compra de bolsas, cajas u otro empaque: activo de empaque contra Banco o Caja. */
   async function registerPackagingPurchase(
     material: PackagingMaterial,
     quantity: number,
     unitCost: number,
     paymentAccount: "cash" | "bank",
+    entryDate = new Date().toISOString().slice(0, 10),
   ) {
     if (!supabase || quantity <= 0 || unitCost < 0) return;
     const location = await ensureLocation();
@@ -1007,12 +1010,25 @@ export function App() {
       notes: `Compra de ${material.kind.toLowerCase()} · pagada desde ${paymentAccount === "bank" ? "Banco" : "Caja"}`,
       created_by: session?.user?.id ?? null,
     });
-    await postJournal(new Date().toISOString().slice(0, 10), `Compra empaque ${material.internal_code}`, "purchase", null, [
-      { account_id: accountIdByKey("packaging_inventory"), debit: total, credit: 0, description: `Entrada ${material.name}` },
+    await postJournal(entryDate, `Compra empaque ${material.internal_code}`, "purchase", null, [
+      { account_id: material.inventory_account_id ?? accountIdByKey("packaging_inventory"), debit: total, credit: 0, description: `Entrada ${material.name}` },
       { account_id: accountIdByKey(paymentAccount), debit: 0, credit: total, description: "Pago compra empaque" },
     ]);
     await logAudit("Compra de empaque", `${material.name} · +${quantity} ${material.unit} · ${paymentAccount === "bank" ? "Banco" : "Caja"}`);
     setNotice(`Compra registrada · +${quantity} ${material.unit}${quantity !== 1 ? "es" : ""}`);
+    await loadWorkspace();
+  }
+
+  /** Saldos ya contabilizados: se controlan en inventario sin duplicar su partida. */
+  async function recordExistingPackagingStock(material: PackagingMaterial, quantity: number) {
+    if (!supabase || quantity <= 0) return;
+    const location = await ensureLocation();
+    const currentAtLocation = Number(material.stockByLocation[location.id] ?? 0);
+    const { error } = await supabase.from("packaging_stock_levels").upsert({ material_id: material.id, location_id: location.id, quantity: currentAtLocation + quantity });
+    if (error) { setNotice(error.message); return; }
+    await supabase.from("packaging_movements").insert({ material_id: material.id, location_id: location.id, movement_type: "adjustment_in", quantity, unit_cost: material.unit_cost, notes: "Saldo inicial ya contabilizado", created_by: session?.user?.id ?? null });
+    await logAudit("Saldo inicial de empaque", `${material.name} · +${quantity} ${material.unit} · sin repetir partida`);
+    setNotice("Existencias registradas sin repetir la partida existente.");
     await loadWorkspace();
   }
 
@@ -1081,7 +1097,7 @@ export function App() {
       received_at: new Date().toISOString(),
     }).eq("id", request.id);
     await postJournal(new Date().toISOString().slice(0, 10), `Compra empaque ${material.internal_code}`, "purchase", null, [
-      { account_id: accountIdByKey("packaging_inventory"), debit: total, credit: 0, description: `Entrada ${material.name}` },
+      { account_id: material.inventory_account_id ?? accountIdByKey("packaging_inventory"), debit: total, credit: 0, description: `Entrada ${material.name}` },
       { account_id: accountIdByKey(paymentAccount), debit: 0, credit: total, description: "Pago compra empaque" },
     ]);
     await logAudit("Recepción empaque", `${material.name} · +${quantity} ${material.unit} · costo vigente ${unitCost}`);
@@ -1274,6 +1290,19 @@ export function App() {
       return false;
     }
     return true;
+  }
+
+  /** Agrupa el consumo por la cuenta de activo elegida para cada material. */
+  function packagingAssetLines(rows: Array<{ material_id: string; quantity: number; unit_cost?: number; total_cost?: number }>, side: "debit" | "credit") {
+    const grouped = new Map<string, number>();
+    for (const row of rows) {
+      const material = packagingMaterials.find((entry) => entry.id === row.material_id);
+      const accountId = material?.inventory_account_id ?? accountIdByKey("packaging_inventory");
+      if (!accountId) continue;
+      const amount = Number(row.total_cost ?? row.quantity * Number(row.unit_cost ?? material?.unit_cost ?? 0));
+      grouped.set(accountId, Number(((grouped.get(accountId) ?? 0) + amount).toFixed(2)));
+    }
+    return [...grouped].map(([account_id, amount]) => ({ account_id, debit: side === "debit" ? amount : 0, credit: side === "credit" ? amount : 0, description: side === "credit" ? "Consumo de empaque" : "Reingreso empaque" }));
   }
 
   /** Alta de existencias al crear una referencia: Inventario contra Capital, como la carga de Excel. */
@@ -1488,8 +1517,7 @@ export function App() {
       { account_id: accountIdByKey("tax_payable"), debit: 0, credit: tax, description: "ISV por pagar" },
       { account_id: accountIdByKey("cogs"), debit: costTotal, credit: 0, description: "Costo de venta" },
       { account_id: accountIdByKey("inventory"), debit: 0, credit: costTotal, description: "Salida de inventario" },
-      { account_id: accountIdByKey("packaging_expense"), debit: packagingCost, credit: 0, description: "Empaque usado" },
-      { account_id: accountIdByKey("packaging_inventory"), debit: 0, credit: packagingCost, description: "Consumo de empaque" },
+      ...(packagingCost > 0 ? [{ account_id: accountIdByKey("packaging_expense"), debit: packagingCost, credit: 0, description: "Empaque usado" }, ...packagingAssetLines(usage, "credit")] : []),
     ]);
 
     const paymentLabel = collectionMethod === "cash" ? "Efectivo" : collectionMethod === "bank_deposit" ? "Depósito bancario" : "Transferencia bancaria";
@@ -2008,8 +2036,7 @@ export function App() {
       { account_id: accountIdByKey("tax_payable"), debit: tax, credit: 0, description: "Reversa ISV" },
       { account_id: accountIdByKey("cogs"), debit: 0, credit: costTotal, description: "Reversa costo de venta" },
       { account_id: accountIdByKey("inventory"), debit: costTotal, credit: 0, description: "Reingreso inventario" },
-      { account_id: accountIdByKey("packaging_expense"), debit: 0, credit: packagingCost, description: "Reversa gasto empaque" },
-      { account_id: accountIdByKey("packaging_inventory"), debit: packagingCost, credit: 0, description: "Reingreso empaque" },
+      ...(packagingCost > 0 ? [{ account_id: accountIdByKey("packaging_expense"), debit: 0, credit: packagingCost, description: "Reversa gasto empaque" }, ...packagingAssetLines(packagingUsageRows ?? [], "debit")] : []),
     ]);
 
     // 4) Registrar la devolucion del dinero: reembolso (pago negativo) y dejar la factura en pagado = 0.
