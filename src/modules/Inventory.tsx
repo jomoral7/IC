@@ -448,7 +448,7 @@ export function Inventory({
               <ScanLine size={16} /> Escanear
             </button>
             <button className="secondary-button" onClick={() => { setPurchaseDraft(null); setPurchasing(true); }}>
-              <Truck size={16} /> Entrada de pedido
+              <Truck size={16} /> Registrar compra / entrada
             </button>
             <button className="secondary-button" onClick={() => setMatrixing(true)}>
               <PackagePlus size={16} /> Crear por matriz
@@ -1319,6 +1319,7 @@ function PurchaseModal({
   const [fundingTouched, setFundingTouched] = useState(false);
   const paymentAccounts = accounts.filter((account) => account.active && account.is_postable &&
     (["bank", "cash", "accounts_payable"].includes(account.system_key ?? "") || ["1106", "5211"].includes(account.code)));
+  const inventoryAccount = accounts.find((account) => account.active && account.is_postable && account.system_key === "inventory");
   const bankAccount = paymentAccounts.find((account) => account.system_key === "bank");
 
   const matches = useMemo(() => {
@@ -1363,7 +1364,7 @@ function PurchaseModal({
   });
   const reclassifiedFreight = fundingRows.reduce((sum, row) => sum +
     (paymentAccounts.find((account) => account.id === row.account_id)?.code === "5211" ? Number(row.amount || 0) : 0), 0);
-  const canSave = lines.length > 0 && merchandise > 0 && Number.isFinite(freight) && freight >= 0 &&
+  const canSave = !!inventoryAccount && lines.length > 0 && merchandise > 0 && Number.isFinite(freight) && freight >= 0 &&
     Number(freight.toFixed(2)) === freight && lines.every((l) => Number.isInteger(l.qty) && l.qty > 0 &&
       Number.isFinite(l.unit_cost) && l.unit_cost >= 0 && Number(l.unit_cost.toFixed(2)) === l.unit_cost) &&
     !!entryDate && validFunding && reclassifiedFreight <= freight && funded === total && !saving;
@@ -1396,7 +1397,7 @@ function PurchaseModal({
         <div className="panel-heading">
           <div>
             <p className="section-label">Entrada de mercaderia</p>
-            <h2>Registrar compra recibida</h2>
+            <h2>Registrar compra / entrada</h2>
           </div>
           <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
@@ -1405,7 +1406,7 @@ function PurchaseModal({
 
         <div className="purchase-intro">
           <strong>La entrada suma existencias y actualiza el costo promedio.</strong>
-          <span>Las ventas y facturas ya emitidas no cambian.</span>
+          <span>Cada producto suma existencias por separado. Las ventas y facturas ya emitidas no cambian.</span>
         </div>
         <div className="form-section purchase-details-grid">
           <label>
@@ -1453,7 +1454,7 @@ function PurchaseModal({
                   <th>Cant.</th>
                   <th>Costo recibido</th>
                   <th>Costo promedio nuevo</th>
-                  <th>Subtotal</th>
+                  <th>Debe inventario</th>
                   <th></th>
                 </tr>
               </thead>
@@ -1463,6 +1464,7 @@ function PurchaseModal({
                     <td>
                       <strong>{line.product.name}</strong>
                       <span className="inv-code">{line.product.internal_code ?? line.product.sku}</span>
+                      {inventoryAccount && <span className="purchase-account-note">Debe · {inventoryAccount.code} {inventoryAccount.name}</span>}
                     </td>
                     <td>
                       <input
@@ -1509,7 +1511,7 @@ function PurchaseModal({
             </label>
             <div className="purchase-allocation-total"><span>Productos {lps(merchandise)} + flete {lps(freight)}</span><strong>Total {lps(total)}</strong></div>
           </div>
-          <div className="purchase-funding-heading"><div><strong>¿Cómo se cubre esta compra?</strong><small>Banco, Caja, anticipo, flete ya pagado o cuenta por pagar. Cada monto se registra una sola vez.</small></div>
+          <div className="purchase-funding-heading"><div><strong>Haber · ¿Cómo se cubre esta compra?</strong><small>Estas cuentas cubren el lote completo; el Debe de cada producto aparece arriba. Cada monto se registra una sola vez.</small></div>
             <button type="button" className="secondary-button" onClick={() => { setFunding([...fundingRows, { account_id: bankAccount?.id ?? "", amount: 0 }]); setFundingTouched(true); }}>+ Agregar cuenta</button>
           </div>
           {fundingRows.map((row, index) => {

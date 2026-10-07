@@ -2369,6 +2369,13 @@ td:last-child {
   border-radius: 8px;
   font-size: 14px;
 }
+.purchase-account-note {
+  display: block;
+  margin-top: 3px;
+  color: #48647a;
+  font-size: 11px;
+  line-height: 1.35;
+}
 
 @media (max-width: 720px) {
   .purchase-intro,
