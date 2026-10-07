@@ -23,7 +23,7 @@ import type { Session } from "@supabase/supabase-js";
 import { utils, writeFile } from "xlsx";
 import { clsx } from "clsx";
 import { supabase } from "./lib/supabase";
-import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, PackagingMaterial, PackagingMaterialForm, PackagingStockRequest, PackagingUsage, Party, Product, ProductForm, PurchaseLine, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
+import type { Account, AccountType, BonusPayment, CashCollectionMethod, CashMovement, CartLine, Commission, JournalEntryFull, Location, PackagingMaterial, PackagingMaterialForm, PackagingStockRequest, PackagingUsage, Party, Product, ProductForm, PurchaseFunding, PurchaseLine, PurchaseSource, SalesLine, Seller, SellerGoal, UserProfile } from "./types";
 import { BrandMark, LoginScreen, roleLabel } from "./ui";
 import { Dashboard } from "./modules/Dashboard";
 import { POS, type POSInvoicePreview } from "./modules/Pos";
@@ -90,6 +90,7 @@ export function App() {
   const [bonusPayments, setBonusPayments] = useState<BonusPayment[]>([]);
   const [stockRequests, setStockRequests] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [purchaseSources, setPurchaseSources] = useState<PurchaseSource[]>([]);
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [journal, setJournal] = useState<JournalEntryFull[]>([]);
   const [salesLines, setSalesLines] = useState<SalesLine[]>([]);
@@ -358,6 +359,9 @@ export function App() {
       })),
     }));
     setJournal(fullJournal);
+    const { data: purchaseSourceRows, error: sourceError } = await supabase.rpc("available_purchase_sources");
+    if (sourceError) console.warn("No se pudieron cargar pagos anteriores de proveedores:", sourceError.message);
+    setPurchaseSources((purchaseSourceRows ?? []).map((row: any) => ({ ...row, available: Number(row.available) })));
 
     // Lineas de venta (facturas no anuladas) para el analisis.
     setSalesLines(
@@ -850,73 +854,36 @@ export function App() {
     await loadWorkspace();
   }
 
-  async function registerPurchase(supplierId: string | null, lines: PurchaseLine[], paymentAccount: "cash" | "bank" = "bank") {
-    if (!supabase || lines.length === 0) return;
-    const location = await ensureLocation();
-    const subtotal = lines.reduce((sum, line) => sum + line.qty * line.unit_cost, 0);
-    const documentNumber = String(Date.now()).slice(-6);
-    const { data: document, error } = await supabase
-      .from("documents")
-      .insert({
-        kind: "purchase",
-        document_number: documentNumber,
-        party_id: supplierId,
-        location_id: location.id,
-        status: "received",
-        payment_terms: "cash",
-        subtotal,
-        total: subtotal,
-        paid_amount: subtotal,
-      })
-      .select("*")
-      .single();
-    if (error) {
-      setNotice(error.message);
-      return;
-    }
-    await supabase.from("document_items").insert(
-      lines.map((line) => ({
-        document_id: document.id,
-        product_id: line.product.id,
-        quantity: line.qty,
-        unit_cost: line.unit_cost,
-        unit_price: line.product.sale_price,
-        line_total: line.qty * line.unit_cost,
-      })),
-    );
-    for (const line of lines) {
-      const nextStockAtLocation = Number(line.product.stockByLocation[location.id] ?? 0) + line.qty;
-      const totalStockAfterReceipt = line.product.stock + line.qty;
-      const weightedCost = totalStockAfterReceipt > 0
-        ? Number((((line.product.stock * line.product.real_cost) + (line.qty * line.unit_cost)) / totalStockAfterReceipt).toFixed(2))
-        : line.unit_cost;
-      await supabase
-        .from("stock_levels")
-        .upsert({ product_id: line.product.id, location_id: location.id, quantity: nextStockAtLocation });
-      // El costo promedio aplica desde esta recepcion hacia adelante. Las facturas anteriores
-      // conservan el unit_cost guardado en sus propios renglones.
-      await supabase
-        .from("products")
-        .update({ real_cost: weightedCost, cost: weightedCost, supplier_id: supplierId ?? line.product.supplier_id ?? null })
-        .eq("id", line.product.id);
-      await supabase.from("inventory_movements").insert({
-        product_id: line.product.id,
-        location_id: location.id,
-        document_id: document.id,
-        movement_type: "purchase",
-        quantity: line.qty,
-        unit_cost: line.unit_cost,
-        unit_price: line.product.sale_price,
-        notes: `Entrada pedido ${document.document_number}`,
+  async function registerPurchaseBatch(
+    supplierId: string | null, lines: PurchaseLine[], freight: number,
+    funding: PurchaseFunding[], entryDate: string, requestId: string | null = null,
+  ): Promise<boolean> {
+    if (!supabase || lines.length === 0) return false;
+    try {
+      const location = await ensureLocation();
+      const { error } = await supabase.rpc("record_purchase_batch", {
+        p_supplier_id: supplierId,
+        p_location_id: location.id,
+        p_entry_date: entryDate,
+        p_lines: lines.map((line) => ({ product_id: line.product.id, qty: line.qty, unit_cost: line.unit_cost })),
+        p_freight: freight,
+        p_funding: funding,
+        p_request_id: requestId,
       });
+      if (error) { setNotice(error.message); return false; }
+      setNotice("Compra, existencias y partida registradas juntas.");
+      try {
+        await logAudit("Compra de inventario", `${lines.length} productos · ${lines.reduce((sum, line) => sum + line.qty, 0)} unidades`);
+        await loadWorkspace();
+      } catch (refreshError) {
+        console.warn("La compra se guardó, pero no se pudo actualizar la pantalla:", refreshError);
+        setNotice("Compra registrada. Actualiza la página para ver las nuevas existencias.");
+      }
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "No se pudo registrar la compra");
+      return false;
     }
-    // La entrada fisica tambien debe aumentar el activo Inventario.
-    await postJournal(new Date(document.created_at).toISOString().slice(0, 10), `Compra ${document.document_number}`, "purchase", document.id, [
-      { account_id: accountIdByKey("inventory"), debit: subtotal, credit: 0, description: "Entrada de inventario" },
-      { account_id: accountIdByKey(paymentAccount), debit: 0, credit: subtotal, description: `Pago compra desde ${paymentAccount === "bank" ? "Banco" : "Caja"}` },
-    ]);
-    setNotice(`Entrada ${document.document_number} registrada · +${lines.reduce((s, l) => s + l.qty, 0)} unidades · costo promedio actualizado`);
-    await loadWorkspace();
   }
 
   /** Guides were already purchased and posted: only maintain the catalog and quantities. */
@@ -1156,77 +1123,6 @@ export function App() {
     if (!supabase) return;
     const { error } = await supabase.from("stock_requests").update({ status: "cancelled" }).eq("id", request.id);
     setNotice(error ? error.message : "Pedido cancelado");
-    await loadWorkspace();
-  }
-
-  async function receiveOrderQty(request: any, arrivedQty: number, unitCost: number, paymentAccount: "cash" | "bank" = "bank") {
-    if (!supabase || arrivedQty <= 0) return;
-    const product = products.find((p) => p.id === request.product_id);
-    if (!product) return;
-    const location = await ensureLocation();
-    const remainingQty = Math.max(0, Number(request.requested_quantity) - Number(request.received_quantity ?? 0));
-    if (arrivedQty > remainingQty) {
-      setNotice(`Solo faltan ${remainingQty} unidades por recibir de este pedido.`);
-      return;
-    }
-    const total = arrivedQty * unitCost;
-    const documentNumber = String(Date.now()).slice(-6);
-    const { data: document, error } = await supabase
-      .from("documents")
-      .insert({
-        kind: "purchase",
-        document_number: documentNumber,
-        party_id: request.supplier_id ?? null,
-        location_id: location.id,
-        status: "received",
-        payment_terms: "cash",
-        subtotal: total,
-        total,
-        paid_amount: total,
-      })
-      .select("*")
-      .single();
-    if (error) {
-      setNotice(error.message);
-      return;
-    }
-    await supabase.from("document_items").insert({
-      document_id: document.id,
-      product_id: product.id,
-      quantity: arrivedQty,
-      unit_cost: unitCost,
-      unit_price: product.sale_price,
-      line_total: total,
-    });
-    const nextStockAtLocation = Number(product.stockByLocation[location.id] ?? 0) + arrivedQty;
-    const totalStockAfterReceipt = product.stock + arrivedQty;
-    const weightedCost = totalStockAfterReceipt > 0
-      ? Number((((product.stock * product.real_cost) + (arrivedQty * unitCost)) / totalStockAfterReceipt).toFixed(2))
-      : unitCost;
-    await supabase.from("stock_levels").upsert({ product_id: product.id, location_id: location.id, quantity: nextStockAtLocation });
-    await supabase.from("products").update({ real_cost: weightedCost, cost: weightedCost }).eq("id", product.id);
-    await supabase.from("inventory_movements").insert({
-      product_id: product.id,
-      location_id: location.id,
-      document_id: document.id,
-      movement_type: "purchase",
-      quantity: arrivedQty,
-      unit_cost: unitCost,
-      unit_price: product.sale_price,
-      notes: `Recibido pedido ${document.document_number}`,
-    });
-    const receivedQuantity = Number(request.received_quantity ?? 0) + arrivedQty;
-    await supabase.from("stock_requests").update({
-      received_quantity: receivedQuantity,
-      status: receivedQuantity >= Number(request.requested_quantity) ? "received" : "partial",
-      received_at: new Date().toISOString(),
-    }).eq("id", request.id);
-    // Una recepcion parcial tambien es una compra: inventario sube y la cuenta elegida registra el pago.
-    await postJournal(new Date(document.created_at).toISOString().slice(0, 10), `Compra ${document.document_number}`, "purchase", document.id, [
-      { account_id: accountIdByKey("inventory"), debit: total, credit: 0, description: "Entrada de inventario" },
-      { account_id: accountIdByKey(paymentAccount), debit: 0, credit: total, description: `Pago compra desde ${paymentAccount === "bank" ? "Banco" : "Caja"}` },
-    ]);
-    setNotice(`Recibido: +${arrivedQty} unidades`);
     await loadWorkspace();
   }
 
@@ -2418,6 +2314,8 @@ export function App() {
           <Inventory
             products={filteredProducts}
             suppliers={suppliers}
+            accounts={accounts}
+            purchaseSources={purchaseSources}
             categories={categories}
             brands={brands}
             sizes={sizes}
@@ -2426,10 +2324,9 @@ export function App() {
             createProductMatrix={createProductMatrix}
             deleteProduct={deleteProduct}
             registerAdjustment={registerAdjustment}
-            registerPurchase={registerPurchase}
+            registerPurchaseBatch={registerPurchaseBatch}
             createOrder={createOrder}
             stockRequests={stockRequests}
-            receiveOrderQty={receiveOrderQty}
             cancelOrder={cancelOrder}
           />
         )}

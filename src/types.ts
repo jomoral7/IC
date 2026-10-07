@@ -189,6 +189,17 @@ export type AdjustmentDraft = { product: Product; quantity: number; reason: stri
 /** Una linea de una entrada de pedido / compra. */
 export type PurchaseLine = { product: Product; qty: number; unit_cost: number };
 
+/** Distribución de una compra. Anticipos y fletes ya pagados referencian su partida original. */
+export type PurchaseFunding = { account_id: string; amount: number; advance_entry_id?: string | null };
+export type PurchaseSource = {
+  entry_id: string;
+  entry_date: string;
+  memo: string | null;
+  account_id: string;
+  available: number;
+  linked_supplier_id: string | null;
+};
+
 /** Insumo interno usado para preparar una venta. No forma parte de la factura del cliente. */
 export type PackagingMaterial = {
   id: string;

@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
-import type { AdjustmentDraft, Party, Product, ProductForm, PurchaseLine } from "../types";
+import type { Account, AdjustmentDraft, Party, Product, ProductForm, PurchaseFunding, PurchaseLine, PurchaseSource } from "../types";
 import { ADJUSTMENT_REASONS, CATEGORY_OPTIONS, COLOR_OPTIONS, GENDERS, emptyProduct, sizesForCategory } from "../types";
 import { lps, shortDate, stockState, suggestedRestock } from "../lib/format";
 import { Combobox, EmptyWork } from "../ui";
@@ -207,6 +207,8 @@ function ColorPickerField({
 export function Inventory({
   products,
   suppliers,
+  accounts,
+  purchaseSources,
   categories,
   brands,
   sizes,
@@ -215,14 +217,15 @@ export function Inventory({
   createProductMatrix,
   deleteProduct,
   registerAdjustment,
-  registerPurchase,
+  registerPurchaseBatch,
   createOrder,
   stockRequests,
-  receiveOrderQty,
   cancelOrder,
 }: {
   products: Product[];
   suppliers: Party[];
+  accounts: Account[];
+  purchaseSources: PurchaseSource[];
   categories: string[];
   brands: string[];
   sizes: string[];
@@ -234,10 +237,9 @@ export function Inventory({
   ) => Promise<void>;
   deleteProduct: (product: Product) => Promise<void>;
   registerAdjustment: (productId: string, quantityDelta: number, reason: string, notes: string) => Promise<void>;
-  registerPurchase: (supplierId: string | null, lines: PurchaseLine[], paymentAccount?: "cash" | "bank") => Promise<void>;
+  registerPurchaseBatch: (supplierId: string | null, lines: PurchaseLine[], freight: number, funding: PurchaseFunding[], entryDate: string, requestId?: string | null) => Promise<boolean>;
   createOrder: (product: Product, quantity: number, supplierId: string | null) => Promise<void>;
   stockRequests: any[];
-  receiveOrderQty: (request: any, arrivedQty: number, unitCost: number, paymentAccount?: "cash" | "bank") => Promise<void>;
   cancelOrder: (request: any) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Product | null>(null);
@@ -250,6 +252,7 @@ export function Inventory({
   const [groupVariants, setGroupVariants] = useState(false);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [purchasing, setPurchasing] = useState(false);
+  const [purchaseDraft, setPurchaseDraft] = useState<{ supplierId: string; lines: PurchaseLine[]; requestId: string | null } | null>(null);
   const [localQuery, setLocalQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [pedido, setPedido] = useState<{ product: Product; requestId?: string } | null>(null);
@@ -444,7 +447,7 @@ export function Inventory({
             <button className="secondary-button" onClick={() => setScanning(true)}>
               <ScanLine size={16} /> Escanear
             </button>
-            <button className="secondary-button" onClick={() => setPurchasing(true)}>
+            <button className="secondary-button" onClick={() => { setPurchaseDraft(null); setPurchasing(true); }}>
               <Truck size={16} /> Entrada de pedido
             </button>
             <button className="secondary-button" onClick={() => setMatrixing(true)}>
@@ -573,8 +576,14 @@ export function Inventory({
           initialRequestId={pedido.requestId}
           onClose={() => setPedido(null)}
           onOrder={(supplierId, qty) => createOrder(pedido.product, qty, supplierId)}
-          onReceiveManual={(supplierId, qty, unitCost, paymentAccount) => registerPurchase(supplierId, [{ product: pedido.product, qty, unit_cost: unitCost }], paymentAccount)}
-          onReceiveOrder={receiveOrderQty}
+          onReceiveManual={async (supplierId, qty, unitCost) => {
+            setPurchaseDraft({ supplierId: supplierId ?? "", lines: [{ product: pedido.product, qty, unit_cost: unitCost }], requestId: null });
+            setPurchasing(true);
+          }}
+          onReceiveOrder={async (request, qty, unitCost) => {
+            setPurchaseDraft({ supplierId: request.supplier_id ?? "", lines: [{ product: pedido.product, qty, unit_cost: unitCost }], requestId: request.id });
+            setPurchasing(true);
+          }}
           onCancelOrder={cancelOrder}
         />
       )}
@@ -582,8 +591,13 @@ export function Inventory({
         <PurchaseModal
           products={products}
           suppliers={suppliers}
-          onClose={() => setPurchasing(false)}
-          onSave={registerPurchase}
+          accounts={accounts}
+          purchaseSources={purchaseSources}
+          initialSupplierId={purchaseDraft?.supplierId ?? ""}
+          initialLines={purchaseDraft?.lines ?? []}
+          requestId={purchaseDraft?.requestId ?? null}
+          onClose={() => { setPurchasing(false); setPurchaseDraft(null); }}
+          onSave={registerPurchaseBatch}
         />
       )}
       {matrixing && (
@@ -754,8 +768,8 @@ function PedidoModal({
   initialRequestId?: string;
   onClose: () => void;
   onOrder: (supplierId: string | null, quantity: number) => Promise<void>;
-  onReceiveManual: (supplierId: string | null, quantity: number, unitCost: number, paymentAccount: "cash" | "bank") => Promise<void>;
-  onReceiveOrder: (request: any, arrivedQty: number, unitCost: number, paymentAccount: "cash" | "bank") => Promise<void>;
+  onReceiveManual: (supplierId: string | null, quantity: number, unitCost: number) => Promise<void>;
+  onReceiveOrder: (request: any, arrivedQty: number, unitCost: number) => Promise<void>;
   onCancelOrder: (request: any) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"order" | "receive">("order");
@@ -767,7 +781,6 @@ function PedidoModal({
   const [selected, setSelected] = useState<string>(initialRequestId ?? requests[0]?.id ?? "manual");
   const initialRequest = requests.find((request) => request.id === (initialRequestId ?? requests[0]?.id));
   const [arrived, setArrived] = useState<number>(Math.max(1, Number(initialRequest?.requested_quantity ?? qty) - Number(initialRequest?.received_quantity ?? 0)));
-  const [paymentAccount, setPaymentAccount] = useState<"cash" | "bank">("bank");
   const order = requests.find((r) => r.id === selected) ?? null;
   const remaining = order ? Math.max(0, Number(order.requested_quantity) - Number(order.received_quantity ?? 0)) : 0;
 
@@ -781,8 +794,8 @@ function PedidoModal({
   async function submitReceive() {
     if (arrived <= 0 || saving) return;
     setSaving(true);
-    if (order) await onReceiveOrder(order, arrived, unitCost, paymentAccount);
-    else await onReceiveManual(supplierId || null, arrived, unitCost, paymentAccount);
+    if (order) await onReceiveOrder(order, arrived, unitCost);
+    else await onReceiveManual(supplierId || null, arrived, unitCost);
     setSaving(false);
     onClose();
   }
@@ -886,20 +899,13 @@ function PedidoModal({
                 Costo unitario
                 <input type="number" min={0} value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} />
               </label>
-              <label>
-                Se paga desde
-                <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value as "cash" | "bank")}>
-                  <option value="bank">Banco</option>
-                  <option value="cash">Caja</option>
-                </select>
-              </label>
             </div>
             <p className="adj-result">
               Nuevo stock: <strong>{product.stock + Math.max(0, arrived)}</strong> · Total: <strong>{lps(arrived * unitCost)}</strong>
             </p>
             <p className="mini-note">El costo se promedia con las existencias actuales. Las ventas anteriores conservan su costo original.</p>
             <button className="primary-button wide" disabled={arrived <= 0 || saving} aria-busy={saving} onClick={() => void submitReceive()}>
-              <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada"}
+              <PackagePlus size={18} /> {saving ? "Preparando..." : "Continuar a compra y cuentas"}
             </button>
             {order && (
               <button
@@ -1285,19 +1291,35 @@ function AdjustmentModal({
 function PurchaseModal({
   products,
   suppliers,
+  accounts,
+  purchaseSources,
+  initialSupplierId = "",
+  initialLines = [],
+  requestId = null,
   onClose,
   onSave,
 }: {
   products: Product[];
   suppliers: Party[];
+  accounts: Account[];
+  purchaseSources: PurchaseSource[];
+  initialSupplierId?: string;
+  initialLines?: PurchaseLine[];
+  requestId?: string | null;
   onClose: () => void;
-  onSave: (supplierId: string | null, lines: PurchaseLine[], paymentAccount: "cash" | "bank") => Promise<void>;
+  onSave: (supplierId: string | null, lines: PurchaseLine[], freight: number, funding: PurchaseFunding[], entryDate: string, requestId?: string | null) => Promise<boolean>;
 }) {
-  const [supplierId, setSupplierId] = useState("");
-  const [lines, setLines] = useState<PurchaseLine[]>([]);
+  const [supplierId, setSupplierId] = useState(initialSupplierId);
+  const [lines, setLines] = useState<PurchaseLine[]>(initialLines);
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
-  const [paymentAccount, setPaymentAccount] = useState<"cash" | "bank">("bank");
+  const [entryDate, setEntryDate] = useState(new Date().toLocaleDateString("en-CA"));
+  const [freight, setFreight] = useState(0);
+  const [funding, setFunding] = useState<PurchaseFunding[]>([]);
+  const [fundingTouched, setFundingTouched] = useState(false);
+  const paymentAccounts = accounts.filter((account) => account.active && account.is_postable &&
+    (["bank", "cash", "accounts_payable"].includes(account.system_key ?? "") || ["1106", "5211"].includes(account.code)));
+  const bankAccount = paymentAccounts.find((account) => account.system_key === "bank");
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1323,15 +1345,49 @@ function PurchaseModal({
     setLines((current) => current.filter((l) => l.product.id !== id));
   }
 
-  const total = lines.reduce((sum, l) => sum + l.qty * l.unit_cost, 0);
-  const canSave = lines.length > 0 && lines.every((l) => l.qty > 0) && !saving;
+  const merchandise = Number(lines.reduce((sum, l) => sum + l.qty * l.unit_cost, 0).toFixed(2));
+  const total = Number((merchandise + freight).toFixed(2));
+  const fundingRows = fundingTouched ? funding : bankAccount ? [{ account_id: bankAccount.id, amount: total }] : [];
+  const funded = Number(fundingRows.reduce((sum, row) => sum + Number(row.amount || 0), 0).toFixed(2));
+  const validFunding = fundingRows.length > 0 && fundingRows.every((row) => {
+    const account = paymentAccounts.find((item) => item.id === row.account_id);
+    if (!account || !Number.isFinite(row.amount) || row.amount <= 0 || Number(row.amount.toFixed(2)) !== row.amount) return false;
+    if (["1106", "5211"].includes(account.code)) {
+      const source = purchaseSources.find((item) => item.entry_id === row.advance_entry_id && item.account_id === account.id);
+      return !!supplierId && !!source && row.amount <= source.available &&
+        (!source.linked_supplier_id || source.linked_supplier_id === supplierId) &&
+        (account.code !== "5211" || row.amount <= freight);
+    }
+    if (account.system_key === "accounts_payable") return !!supplierId;
+    return true;
+  });
+  const reclassifiedFreight = fundingRows.reduce((sum, row) => sum +
+    (paymentAccounts.find((account) => account.id === row.account_id)?.code === "5211" ? Number(row.amount || 0) : 0), 0);
+  const canSave = lines.length > 0 && merchandise > 0 && Number.isFinite(freight) && freight >= 0 &&
+    Number(freight.toFixed(2)) === freight && lines.every((l) => Number.isInteger(l.qty) && l.qty > 0 &&
+      Number.isFinite(l.unit_cost) && l.unit_cost >= 0 && Number(l.unit_cost.toFixed(2)) === l.unit_cost) &&
+    !!entryDate && validFunding && reclassifiedFreight <= freight && funded === total && !saving;
+
+  function changeFunding(index: number, patch: Partial<PurchaseFunding>) {
+    const next = fundingRows.map((row, position) => position === index ? { ...row, ...patch } : row);
+    setFunding(next);
+    setFundingTouched(true);
+  }
+
+  function freightShare(index: number): number {
+    if (!merchandise || !freight) return 0;
+    if (index === lines.length - 1) return Number((freight - lines.slice(0, -1).reduce((sum, line) =>
+      sum + Number((freight * line.qty * line.unit_cost / merchandise).toFixed(2)), 0)).toFixed(2));
+    const line = lines[index];
+    return Number((freight * line.qty * line.unit_cost / merchandise).toFixed(2));
+  }
 
   async function submit() {
     if (!canSave) return;
     setSaving(true);
-    await onSave(supplierId || null, lines, paymentAccount);
+    const saved = await onSave(supplierId || null, lines, freight, fundingRows, entryDate, requestId);
     setSaving(false);
-    onClose();
+    if (saved) onClose();
   }
 
   return (
@@ -1354,7 +1410,7 @@ function PurchaseModal({
         <div className="form-section purchase-details-grid">
           <label>
             Proveedor
-            <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
+            <select value={supplierId} disabled={!!requestId} onChange={(event) => setSupplierId(event.target.value)}>
               <option value="">Sin proveedor</option>
               {suppliers.map((supplier) => (
                 <option key={supplier.id} value={supplier.id}>
@@ -1363,15 +1419,9 @@ function PurchaseModal({
               ))}
             </select>
           </label>
-          <label>
-            Se paga desde
-            <select value={paymentAccount} onChange={(event) => setPaymentAccount(event.target.value as "cash" | "bank")}>
-              <option value="bank">Banco</option>
-              <option value="cash">Caja</option>
-            </select>
-          </label>
+          <label>Fecha de compra<input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} /></label>
 
-          <label className="purchase-search">
+          {!requestId && <label className="purchase-search">
             Agregar producto
             <div className="inv-search">
               <Search size={16} />
@@ -1389,7 +1439,7 @@ function PurchaseModal({
                 ))}
               </div>
             )}
-          </label>
+          </label>}
         </div>
 
         <div className="purchase-lines">
@@ -1408,7 +1458,7 @@ function PurchaseModal({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => (
+                {lines.map((line, index) => (
                   <tr key={line.product.id}>
                     <td>
                       <strong>{line.product.name}</strong>
@@ -1434,13 +1484,13 @@ function PurchaseModal({
                     </td>
                     <td>
                       <strong className="purchase-cost">{lps((line.product.stock + line.qty) > 0
-                        ? ((line.product.stock * line.product.real_cost) + (line.qty * line.unit_cost)) / (line.product.stock + line.qty)
+                        ? ((line.product.stock * line.product.real_cost) + (line.qty * line.unit_cost) + freightShare(index)) / (line.product.stock + line.qty)
                         : line.unit_cost)}</strong>
                       <span className="purchase-cost-note">antes {lps(line.product.real_cost)}</span>
                     </td>
-                    <td>{lps(line.qty * line.unit_cost)}</td>
+                    <td>{lps(line.qty * line.unit_cost + freightShare(index))}</td>
                     <td>
-                      <button className="icon-button" aria-label={`Quitar ${line.product.name}`} onClick={() => removeLine(line.product.id)}>
+                      <button className="icon-button" disabled={!!requestId} aria-label={`Quitar ${line.product.name}`} onClick={() => removeLine(line.product.id)}>
                         <X size={16} />
                       </button>
                     </td>
@@ -1451,10 +1501,36 @@ function PurchaseModal({
           )}
         </div>
 
-        <div className="total-box purchase-total-box">
-          <div><span>Total compra</span><strong>{lps(total)}</strong></div>
-          <small>Se registrará contra {paymentAccount === "bank" ? "Banco" : "Caja"}.</small>
-        </div>
+        <section className="purchase-allocation" aria-label="Distribución de compra y pago">
+          <div className="purchase-allocation-grid">
+            <label>Flete para traer esta mercadería
+              <input type="number" min={0} step="0.01" value={freight} onChange={(event) => setFreight(Number(event.target.value))} />
+              <small>Se distribuye por valor entre los productos y aumenta su costo. No incluye guías cobradas al cliente.</small>
+            </label>
+            <div className="purchase-allocation-total"><span>Productos {lps(merchandise)} + flete {lps(freight)}</span><strong>Total {lps(total)}</strong></div>
+          </div>
+          <div className="purchase-funding-heading"><div><strong>¿Cómo se cubre esta compra?</strong><small>Banco, Caja, anticipo, flete ya pagado o cuenta por pagar. Cada monto se registra una sola vez.</small></div>
+            <button type="button" className="secondary-button" onClick={() => { setFunding([...fundingRows, { account_id: bankAccount?.id ?? "", amount: 0 }]); setFundingTouched(true); }}>+ Agregar cuenta</button>
+          </div>
+          {fundingRows.map((row, index) => {
+            const selected = paymentAccounts.find((account) => account.id === row.account_id);
+            const eligibleSources = purchaseSources.filter((source) => source.account_id === selected?.id &&
+              (!source.linked_supplier_id || source.linked_supplier_id === supplierId));
+            return <div className="purchase-funding-row" key={index}>
+              <label>Cuenta<select value={row.account_id} onChange={(event) => changeFunding(index, { account_id: event.target.value, advance_entry_id: null })}>
+                <option value="">Selecciona cuenta</option>{paymentAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
+              </select></label>
+              {["1106", "5211"].includes(selected?.code ?? "") && <label>Partida ya pagada<select value={row.advance_entry_id ?? ""} onChange={(event) => changeFunding(index, { advance_entry_id: event.target.value })}>
+                <option value="">Selecciona la partida original</option>{eligibleSources.map((source) => <option key={source.entry_id} value={source.entry_id}>{source.entry_date} · {source.memo || "Pago anterior"} · saldo {lps(source.available)}</option>)}
+              </select></label>}
+              <label>Monto<input type="number" min="0.01" step="0.01" value={row.amount} onChange={(event) => changeFunding(index, { amount: Number(event.target.value) })} /></label>
+              <button type="button" className="icon-button" aria-label={`Quitar cuenta ${index + 1}`} disabled={fundingRows.length === 1} onClick={() => { setFunding(fundingRows.filter((_, position) => position !== index)); setFundingTouched(true); }}><X size={16}/></button>
+            </div>;
+          })}
+          <div className="purchase-funding-balance" data-balanced={total > 0 && funded === total}><span>Distribuido: {lps(funded)}</span><strong>{total > 0 && funded === total ? "Partida cuadrada" : total === 0 ? "Agrega productos" : `Diferencia ${lps(total - funded)}`}</strong></div>
+          {fundingRows.some((row) => ["1106", "5211"].includes(paymentAccounts.find((account) => account.id === row.account_id)?.code ?? "")) &&
+            <p className="purchase-advance-note">Los montos de 1106 y 5211 ya salieron de Banco o Caja en su partida original. Aquí se aplican al inventario sin pagarlos otra vez. La reclasificación de 5211 no puede superar el flete de este lote; confirma que el gasto corresponde a estos productos.</p>}
+        </section>
         <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada y sumar stock"}
         </button>
