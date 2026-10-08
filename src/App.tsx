@@ -478,6 +478,10 @@ export function App() {
 
   async function saveProduct(form: ProductForm, id?: string): Promise<boolean> {
     if (!supabase) return false;
+    if (!id && Number(form.stock) > 0) {
+      setProductSaveFeedback({ message: "El stock inicial se registra desde la entrada de compra con su partida contable.", tone: "error" });
+      return false;
+    }
     const generatedCode = form.internal_code || (await nextInternalCode());
     const payload = {
       sku: (form.sku || generatedCode).trim(),
@@ -513,30 +517,14 @@ export function App() {
       setProductSaveFeedback({ message: `No se pudo guardar el producto: ${error.message}`, tone: "error" });
       return false;
     }
-    // El stock solo nace al crear la referencia. Las ediciones posteriores pasan
-    // por Ajuste, Compra, Venta o transferencia para no romper Kardex ni contabilidad.
+    // Las referencias sin unidades se crean aquí. El stock inicial de una compra
+    // pasa por la transacción de lote para mantener producto, Kardex y partida juntos.
     if (!id) {
       const { error: stockError } = await supabase
         .from("stock_levels")
         .upsert({ product_id: data.id, location_id: location.id, quantity: Number(form.stock) });
       if (stockError) {
         setProductSaveFeedback({ message: `El producto se guardó, pero no se pudo registrar su stock: ${stockError.message}`, tone: "error" });
-        await loadWorkspace();
-        return true;
-      }
-    }
-    if (!id && Number(form.stock) > 0) {
-      const recorded = await recordInitialInventory({
-        productId: data.id,
-        code: data.internal_code ?? generatedCode,
-        quantity: Number(form.stock),
-        unitCost: Number(payload.real_cost),
-        unitPrice: Number(payload.sale_price),
-        locationId: location.id,
-        entryDate: new Date(data.created_at ?? now).toISOString().slice(0, 10),
-      });
-      if (!recorded) {
-        setProductSaveFeedback({ message: "El producto se guardó, pero no se pudo registrar su entrada contable inicial. No lo vendas hasta revisar Contabilidad.", tone: "error" });
         await loadWorkspace();
         return true;
       }
@@ -563,6 +551,10 @@ export function App() {
     combos: { size: string; color: string; qty: number }[],
   ) {
     if (!supabase || combos.length === 0) return;
+    if (combos.some((combo) => Number(combo.qty) > 0)) {
+      setNotice("Las variantes con unidades se registran desde la entrada de compra con su partida contable.");
+      return;
+    }
     const location = await ensureLocation();
     let created = 0;
     for (const combo of combos) {
@@ -600,21 +592,6 @@ export function App() {
       if (stockError) {
         setNotice(`La variante ${code} se creó, pero no se pudo registrar su stock: ${stockError.message}`);
         continue;
-      }
-      if (Number(combo.qty) > 0) {
-        const recorded = await recordInitialInventory({
-          productId: data.id,
-          code,
-          quantity: Number(combo.qty),
-          unitCost: Number(base.real_cost),
-          unitPrice: Number(base.sale_price),
-          locationId: location.id,
-          entryDate: new Date().toISOString().slice(0, 10),
-        });
-        if (!recorded) {
-          setNotice(`La variante ${code} se creó, pero no se pudo registrar su entrada contable inicial.`);
-          continue;
-        }
       }
       created++;
     }
@@ -861,14 +838,17 @@ export function App() {
     if (!supabase || lines.length === 0) return false;
     try {
       const location = await ensureLocation();
-      const { error } = await supabase.rpc("record_purchase_batch", {
+      const hasNewProducts = lines.some((line) => !!line.newProduct);
+      const { error } = await supabase.rpc(hasNewProducts ? "record_purchase_batch_with_new_products" : "record_purchase_batch", {
         p_supplier_id: supplierId,
         p_location_id: location.id,
         p_entry_date: entryDate,
-        p_lines: lines.map((line) => ({ product_id: line.product.id, qty: line.qty, unit_cost: line.unit_cost })),
+        p_lines: lines.map((line) => line.newProduct
+          ? { new_product: line.newProduct, qty: line.qty, unit_cost: line.unit_cost }
+          : { product_id: line.product.id, qty: line.qty, unit_cost: line.unit_cost }),
         p_freight: freight,
         p_funding: funding,
-        p_request_id: requestId,
+        ...(!hasNewProducts ? { p_request_id: requestId } : {}),
       });
       if (error) { setNotice(error.message); return false; }
       setNotice("Compra, existencias y partida registradas juntas.");
@@ -1199,46 +1179,6 @@ export function App() {
       grouped.set(accountId, Number(((grouped.get(accountId) ?? 0) + amount).toFixed(2)));
     }
     return [...grouped].map(([account_id, amount]) => ({ account_id, debit: side === "debit" ? amount : 0, credit: side === "credit" ? amount : 0, description: side === "credit" ? "Consumo de empaque" : "Reingreso empaque" }));
-  }
-
-  /** Alta de existencias al crear una referencia: Inventario contra Capital, como la carga de Excel. */
-  async function recordInitialInventory({
-    productId,
-    code,
-    quantity,
-    unitCost,
-    unitPrice,
-    locationId,
-    entryDate,
-  }: {
-    productId: string;
-    code: string;
-    quantity: number;
-    unitCost: number;
-    unitPrice: number;
-    locationId: string;
-    entryDate: string;
-  }): Promise<boolean> {
-    if (!supabase || quantity <= 0) return true;
-    const { error: movementError } = await supabase.from("inventory_movements").insert({
-      product_id: productId,
-      location_id: locationId,
-      movement_type: "adjustment_in",
-      quantity,
-      unit_cost: unitCost,
-      unit_price: unitPrice,
-      notes: "Inventario inicial al crear producto",
-    });
-    if (movementError) {
-      console.warn("No se pudo registrar el movimiento inicial:", movementError.message);
-      return false;
-    }
-    const total = quantity * unitCost;
-    if (total <= 0) return true;
-    return postJournal(entryDate, `Inventario inicial ${code}`, "manual", null, [
-      { account_id: accountIdByKey("inventory"), debit: total, credit: 0, description: "Inventario inicial" },
-      { account_id: accountIdByKey("capital"), debit: 0, credit: total, description: "Capital inicial" },
-    ]);
   }
 
   async function issueSale(

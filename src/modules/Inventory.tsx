@@ -30,6 +30,24 @@ function mergeOptions(catalog: string[], existing: string[]): string[] {
   return [...catalog, ...extra];
 }
 
+function newPurchaseLine(form: ProductForm, key: string): PurchaseLine {
+  return {
+    product: {
+      ...form,
+      id: `nuevo-${key}`,
+      active: true,
+      stock: 0,
+      stockByLocation: {},
+      incoming: 0,
+      discount_pct: 0,
+      price_final: form.sale_price,
+    },
+    qty: form.stock,
+    unit_cost: form.real_cost,
+    newProduct: form,
+  };
+}
+
 /** Color aproximado para el cuadrito identificador de cada variante. Usa los nombres reales del Excel. */
 const COLOR_HEX: Record<string, string> = {
   negro: "#111111",
@@ -258,6 +276,11 @@ export function Inventory({
   const [pedido, setPedido] = useState<{ product: Product; requestId?: string } | null>(null);
   const [matrixing, setMatrixing] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function startNewProductPurchase(lines: PurchaseLine[], supplierId: string | null) {
+    setPurchaseDraft({ supplierId: supplierId ?? "", lines, requestId: null });
+    setPurchasing(true);
+  }
 
   function toggleGroup(key: string) {
     setExpanded((prev) => {
@@ -556,6 +579,9 @@ export function Inventory({
             setEditing(null);
           }}
           onSave={saveProduct}
+          onInitialStock={(form) => {
+            startNewProductPurchase([newPurchaseLine(form, "individual")], form.supplier_id);
+          }}
         />
       )}
       {adjusting && (
@@ -609,6 +635,18 @@ export function Inventory({
           sizes={sizes}
           onClose={() => setMatrixing(false)}
           onSave={createProductMatrix}
+          onInitialStock={(base, combos) => {
+            const lines = combos.map((combo, index) => newPurchaseLine({
+              ...emptyProduct,
+              ...base,
+              stock: combo.qty,
+              cost: base.real_cost,
+              price: base.sale_price,
+              size: combo.size,
+              color: combo.color,
+            }, `variante-${index}`));
+            startNewProductPurchase(lines, base.supplier_id);
+          }}
         />
       )}
     </>
@@ -991,6 +1029,7 @@ function ProductDrawer({
   colors,
   onClose,
   onSave,
+  onInitialStock,
 }: {
   product: Product | null;
   suppliers: Party[];
@@ -1000,6 +1039,7 @@ function ProductDrawer({
   colors: string[];
   onClose: () => void;
   onSave: (form: ProductForm, id?: string) => Promise<boolean>;
+  onInitialStock: (form: ProductForm) => void;
 }) {
   const categoryOptions = mergeOptions(CATEGORY_OPTIONS, categories);
   const colorOptions = mergeOptions(COLOR_OPTIONS, colors);
@@ -1052,10 +1092,16 @@ function ProductDrawer({
 
   const margin = form.sale_price - form.real_cost;
   const marginPct = form.real_cost > 0 ? Math.round((margin / form.real_cost) * 100) : 0;
-  const canSave = form.name.trim().length > 0 && form.sale_price > 0;
+  const canSave = form.name.trim().length > 0 && form.sale_price > 0 &&
+    (product !== null || form.stock === 0 || (Number.isInteger(form.stock) && form.stock > 0 && form.real_cost > 0));
 
   async function submit() {
     if (!canSave || saving) return;
+    if (!product && form.stock > 0) {
+      onInitialStock(form);
+      onClose();
+      return;
+    }
     setSaving(true);
     const saved = await onSave(form, product?.id);
     setSaving(false);
@@ -1172,11 +1218,14 @@ function ProductDrawer({
               Stock {product ? "actual" : "inicial"}
               <input
                 type="number"
+                min={0}
+                step={1}
                 value={form.stock}
                 readOnly={Boolean(product)}
                 onChange={(event) => set("stock", Number(event.target.value))}
               />
               {product && <small className="field-help">Usa Ajustar inventario para cambiar existencias.</small>}
+              {!product && form.stock > 0 && <small className="field-help">Al continuar elegirás las cuentas de la compra. El producto aún no se guarda.</small>}
             </label>
             <label>
               Minimo (alerta)
@@ -1198,7 +1247,7 @@ function ProductDrawer({
 
         <div className="drawer-footer">
           <button className="primary-button wide" disabled={!canSave || saving} aria-busy={saving} onClick={() => void submit()}>
-            <Save size={18} /> {saving ? "Guardando..." : "Guardar producto"}
+            <Save size={18} /> {saving ? "Guardando..." : !product && form.stock > 0 ? "Continuar a cuentas y entrada" : "Guardar producto"}
           </button>
         </div>
       </aside>
@@ -1365,7 +1414,7 @@ function PurchaseModal({
   const reclassifiedFreight = fundingRows.reduce((sum, row) => sum +
     (paymentAccounts.find((account) => account.id === row.account_id)?.code === "5211" ? Number(row.amount || 0) : 0), 0);
   const canSave = !!inventoryAccount && lines.length > 0 && merchandise > 0 && Number.isFinite(freight) && freight >= 0 &&
-    Number(freight.toFixed(2)) === freight && lines.every((l) => Number.isInteger(l.qty) && l.qty > 0 &&
+    Number(freight.toFixed(2)) === freight && lines.every((l) => Number.isInteger(l.qty) && (l.newProduct ? l.qty >= 0 : l.qty > 0) &&
       Number.isFinite(l.unit_cost) && l.unit_cost >= 0 && Number(l.unit_cost.toFixed(2)) === l.unit_cost) &&
     !!entryDate && validFunding && reclassifiedFreight <= freight && funded === total && !saving;
 
@@ -1376,8 +1425,9 @@ function PurchaseModal({
   }
 
   function freightShare(index: number): number {
-    if (!merchandise || !freight) return 0;
-    if (index === lines.length - 1) return Number((freight - lines.slice(0, -1).reduce((sum, line) =>
+    if (!merchandise || !freight || lines[index].qty === 0) return 0;
+    const lastReceivedIndex = lines.findLastIndex((line) => line.qty > 0);
+    if (index === lastReceivedIndex) return Number((freight - lines.slice(0, index).reduce((sum, line) =>
       sum + Number((freight * line.qty * line.unit_cost / merchandise).toFixed(2)), 0)).toFixed(2));
     const line = lines[index];
     return Number((freight * line.qty * line.unit_cost / merchandise).toFixed(2));
@@ -1406,7 +1456,9 @@ function PurchaseModal({
 
         <div className="purchase-intro">
           <strong>La entrada suma existencias y actualiza el costo promedio.</strong>
-          <span>Cada producto suma existencias por separado. Las ventas y facturas ya emitidas no cambian.</span>
+          <span>{lines.some((line) => line.newProduct)
+            ? "Las referencias nuevas, sus existencias y la partida se guardan juntas al registrar. Si cierras, se descarta este borrador."
+            : "Cada producto suma existencias por separado. Las ventas y facturas ya emitidas no cambian."}</span>
         </div>
         <div className="form-section purchase-details-grid">
           <label>
@@ -1463,13 +1515,15 @@ function PurchaseModal({
                   <tr key={line.product.id}>
                     <td>
                       <strong>{line.product.name}</strong>
-                      <span className="inv-code">{line.product.internal_code ?? line.product.sku}</span>
+                      <span className="inv-code">{line.newProduct
+                        ? `Referencia nueva · ${[line.product.size, line.product.color].filter(Boolean).join(" / ") || "código al guardar"}`
+                        : line.product.internal_code ?? line.product.sku}</span>
                       {inventoryAccount && <span className="purchase-account-note">Debe · {inventoryAccount.code} {inventoryAccount.name}</span>}
                     </td>
                     <td>
                       <input
                         type="number"
-                        min={1}
+                        min={line.newProduct ? 0 : 1}
                         aria-label={`Cantidad de ${line.product.name}`}
                         value={line.qty}
                         onChange={(event) => updateLine(line.product.id, { qty: Number(event.target.value) })}
@@ -1549,6 +1603,7 @@ function MatrixModal({
   sizes,
   onClose,
   onSave,
+  onInitialStock,
 }: {
   suppliers: Party[];
   categories: string[];
@@ -1560,6 +1615,10 @@ function MatrixModal({
     base: { name: string; description: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
     combos: { size: string; color: string; qty: number }[],
   ) => Promise<void>;
+  onInitialStock: (
+    base: { name: string; description: string; category: string; brand: string; gender: string; supplier_id: string | null; real_cost: number; sale_price: number; min_stock: number },
+    combos: { size: string; color: string; qty: number }[],
+  ) => void;
 }) {
   const [base, setBase] = useState({
     name: "",
@@ -1592,27 +1651,32 @@ function MatrixModal({
     setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
   }
 
-  const validRows = rows.filter((r) => (r.size.trim() || r.color.trim()) && r.qty >= 0);
+  const validRows = rows.filter((r) => (r.size.trim() || r.color.trim()) && Number.isInteger(r.qty) && r.qty >= 0);
   const totalUnits = validRows.reduce((sum, r) => sum + r.qty, 0);
-  const canSave = base.name.trim().length > 0 && base.sale_price > 0 && validRows.length > 0 && !saving;
+  const canSave = base.name.trim().length > 0 && base.sale_price > 0 && validRows.length > 0 &&
+    validRows.length === rows.length && (totalUnits === 0 || base.real_cost > 0) && !saving;
 
   async function submit() {
     if (!canSave) return;
+    const details = {
+      name: base.name,
+      description: base.description,
+      category: base.category,
+      brand: base.brand,
+      gender: base.gender,
+      supplier_id: base.supplier_id || null,
+      real_cost: base.real_cost,
+      sale_price: base.sale_price,
+      min_stock: base.min_stock,
+    };
+    const combos = validRows.map((r) => ({ size: r.size.trim(), color: r.color.trim(), qty: r.qty }));
+    if (totalUnits > 0) {
+      onInitialStock(details, combos);
+      onClose();
+      return;
+    }
     setSaving(true);
-    await onSave(
-      {
-        name: base.name,
-        description: base.description,
-        category: base.category,
-        brand: base.brand,
-        gender: base.gender,
-        supplier_id: base.supplier_id || null,
-        real_cost: base.real_cost,
-        sale_price: base.sale_price,
-        min_stock: base.min_stock,
-      },
-      validRows.map((r) => ({ size: r.size.trim(), color: r.color.trim(), qty: r.qty })),
-    );
+    await onSave(details, combos);
     setSaving(false);
     onClose();
   }
@@ -1631,6 +1695,7 @@ function MatrixModal({
         </div>
 
         <p className="mini-note">Datos comunes arriba. Abajo agrega una fila por cada variante (talla + color + cantidad).</p>
+        {totalUnits > 0 && <p className="mini-note">Al continuar podrás distribuir la compra entre Banco, anticipo, flete pagado y otras cuentas. Las variantes todavía no se guardan.</p>}
 
         <div className="form-section">
           <div className="form-grid two">
@@ -1734,7 +1799,7 @@ function MatrixModal({
         </div>
 
         <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
-          <Save size={18} /> {saving ? "Creando..." : `Crear ${validRows.length} variante(s)`}
+          <Save size={18} /> {saving ? "Creando..." : totalUnits > 0 ? `Continuar con ${validRows.length} variante(s)` : `Crear ${validRows.length} variante(s)`}
         </button>
       </aside>
     </div>

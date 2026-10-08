@@ -187,7 +187,7 @@ export type UserProfile = {
 export type AdjustmentDraft = { product: Product; quantity: number; reason: string; notes: string };
 
 /** Una linea de una entrada de pedido / compra. */
-export type PurchaseLine = { product: Product; qty: number; unit_cost: number };
+export type PurchaseLine = { product: Product; qty: number; unit_cost: number; newProduct?: ProductForm };
 
 /** Distribución de una compra. Anticipos y fletes ya pagados referencian su partida original. */
 export type PurchaseFunding = { account_id: string; amount: number; advance_entry_id?: string | null };
