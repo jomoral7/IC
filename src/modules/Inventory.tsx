@@ -270,11 +270,15 @@ export function Inventory({
   const [groupVariants, setGroupVariants] = useState(false);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [purchasing, setPurchasing] = useState(false);
-  const [purchaseDraft, setPurchaseDraft] = useState<{ supplierId: string; lines: PurchaseLine[]; requestId: string | null } | null>(null);
+  const [purchaseDraft, setPurchaseDraft] = useState<{ supplierId: string; lines: PurchaseLine[]; requestId: string | null; isBox?: boolean } | null>(null);
   const [localQuery, setLocalQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [pedido, setPedido] = useState<{ product: Product; requestId?: string } | null>(null);
   const [matrixing, setMatrixing] = useState(false);
+  const [boxOpen, setBoxOpen] = useState(false);
+  const [boxAdding, setBoxAdding] = useState(false);
+  const [boxLines, setBoxLines] = useState<PurchaseLine[]>([]);
+  const [boxSupplierId, setBoxSupplierId] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function startNewProductPurchase(lines: PurchaseLine[], supplierId: string | null) {
@@ -476,6 +480,9 @@ export function Inventory({
             <button className="secondary-button" onClick={() => setMatrixing(true)}>
               <PackagePlus size={16} /> Crear por matriz
             </button>
+            <button className="secondary-button" onClick={() => { setBoxLines([]); setBoxSupplierId(""); setBoxOpen(true); setBoxAdding(true); }}>
+              <PackagePlus size={16} /> Caja nueva
+            </button>
             <button className="primary-button" onClick={() => setCreating(true)}>
               <Plus size={16} /> Nuevo producto
             </button>
@@ -570,8 +577,6 @@ export function Inventory({
         <ProductDrawer
           product={editing}
           suppliers={suppliers}
-          accounts={accounts}
-          purchaseSources={purchaseSources}
           categories={categories}
           brands={brands}
           sizes={sizes}
@@ -581,15 +586,49 @@ export function Inventory({
             setEditing(null);
           }}
           onSave={saveProduct}
-          onInitialStock={(form, freight, funding, entryDate) =>
-            registerPurchaseBatch(
-              form.supplier_id,
-              [newPurchaseLine(form, "individual")],
-              freight,
-              funding,
-              entryDate,
-            )
-          }
+          onInitialStock={(form) => {
+            startNewProductPurchase([newPurchaseLine(form, "individual")], form.supplier_id);
+          }}
+        />
+      )}
+      {boxOpen && !boxAdding && (
+        <BoxDraftModal
+          lines={boxLines}
+          suppliers={suppliers}
+          supplierId={boxSupplierId}
+          onSupplierChange={setBoxSupplierId}
+          onAdd={() => setBoxAdding(true)}
+          onRemove={(id) => setBoxLines((current) => current.filter((line) => line.product.id !== id))}
+          onClose={() => { setBoxOpen(false); setBoxLines([]); setBoxSupplierId(""); }}
+          onFinish={() => {
+            const lines = boxLines.map((line) => ({
+              ...line,
+              product: { ...line.product, supplier_id: boxSupplierId || null },
+              newProduct: line.newProduct ? { ...line.newProduct, supplier_id: boxSupplierId || null } : undefined,
+            }));
+            setPurchaseDraft({ supplierId: boxSupplierId, lines, requestId: null, isBox: true });
+            setBoxOpen(false);
+            setPurchasing(true);
+          }}
+        />
+      )}
+      {boxOpen && boxAdding && (
+        <ProductDrawer
+          product={null}
+          suppliers={suppliers}
+          categories={categories}
+          brands={brands}
+          sizes={sizes}
+          colors={colors}
+          boxMode
+          onClose={() => setBoxAdding(false)}
+          onSave={saveProduct}
+          onInitialStock={() => undefined}
+          onAddToBox={(form) => {
+            setBoxLines((current) => [...current, newPurchaseLine(form, `caja-${Date.now()}-${current.length}`)]);
+            if (!boxSupplierId && form.supplier_id) setBoxSupplierId(form.supplier_id);
+            setBoxAdding(false);
+          }}
         />
       )}
       {adjusting && (
@@ -630,7 +669,20 @@ export function Inventory({
           initialSupplierId={purchaseDraft?.supplierId ?? ""}
           initialLines={purchaseDraft?.lines ?? []}
           requestId={purchaseDraft?.requestId ?? null}
-          onClose={() => { setPurchasing(false); setPurchaseDraft(null); }}
+          boxMode={purchaseDraft?.isBox ?? false}
+          onClose={() => {
+            const returnToBox = purchaseDraft?.isBox ?? false;
+            setPurchasing(false);
+            setPurchaseDraft(null);
+            if (returnToBox) setBoxOpen(true);
+          }}
+          onSaved={() => {
+            setPurchasing(false);
+            setPurchaseDraft(null);
+            setBoxOpen(false);
+            setBoxLines([]);
+            setBoxSupplierId("");
+          }}
           onSave={registerPurchaseBatch}
         />
       )}
@@ -1028,11 +1080,81 @@ function OrdersView({
   );
 }
 
+function BoxDraftModal({
+  lines,
+  suppliers,
+  supplierId,
+  onSupplierChange,
+  onAdd,
+  onRemove,
+  onClose,
+  onFinish,
+}: {
+  lines: PurchaseLine[];
+  suppliers: Party[];
+  supplierId: string;
+  onSupplierChange: (supplierId: string) => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+  onClose: () => void;
+  onFinish: () => void;
+}) {
+  const units = lines.reduce((sum, line) => sum + line.qty, 0);
+  const total = Number(lines.reduce((sum, line) => sum + line.qty * line.unit_cost, 0).toFixed(2));
+
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside className="drawer wide-drawer" role="dialog" aria-modal="true" aria-label="Caja nueva" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-heading">
+          <div>
+            <p className="section-label">Entrada por lote</p>
+            <h2>Caja nueva</h2>
+          </div>
+          <button className="icon-button" aria-label="Cerrar caja sin guardar" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="purchase-intro">
+          <strong>Agrega todos los productos que llegaron dentro de esta caja.</strong>
+          <span>Nada se registra todavía. Al cerrar la caja podrás distribuir el costo total entre las cuentas del Haber.</span>
+        </div>
+
+        <div className="form-section purchase-details-grid">
+          <label>Proveedor de la caja
+            <select value={supplierId} onChange={(event) => onSupplierChange(event.target.value)}>
+              <option value="">Sin proveedor</option>
+              {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+            </select>
+          </label>
+          <div className="purchase-allocation-total"><span>{lines.length} productos · {units} unidades</span><strong>Total {lps(total)}</strong></div>
+        </div>
+
+        <div className="purchase-lines">
+          {lines.length === 0 ? <EmptyWork title="Caja vacía" text="Agrega el primer producto que llegó en esta caja." /> : (
+            <table className="purchase-table">
+              <thead><tr><th>Producto</th><th>Cantidad</th><th>Costo unitario</th><th>Total</th><th></th></tr></thead>
+              <tbody>{lines.map((line) => <tr key={line.product.id}>
+                <td><strong>{line.product.name}</strong><span className="inv-code">{[line.product.category, line.product.brand, line.product.size, line.product.color].filter(Boolean).join(" · ") || "Referencia nueva"}</span></td>
+                <td><strong>{line.qty}</strong></td>
+                <td>{lps(line.unit_cost)}</td>
+                <td><strong>{lps(line.qty * line.unit_cost)}</strong></td>
+                <td><button type="button" className="icon-button" aria-label={`Quitar ${line.product.name} de la caja`} onClick={() => onRemove(line.product.id)}><Trash2 size={16} /></button></td>
+              </tr>)}</tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="drawer-footer">
+          <button type="button" className="secondary-button" onClick={onAdd}><Plus size={16} /> Agregar otro producto</button>
+          <button type="button" className="primary-button" disabled={lines.length === 0 || total <= 0} onClick={onFinish}><Save size={17} /> Cerrar caja y cuadrar cuentas</button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function ProductDrawer({
   product,
   suppliers,
-  accounts,
-  purchaseSources,
   categories,
   brands,
   sizes,
@@ -1040,18 +1162,20 @@ function ProductDrawer({
   onClose,
   onSave,
   onInitialStock,
+  boxMode = false,
+  onAddToBox,
 }: {
   product: Product | null;
   suppliers: Party[];
-  accounts: Account[];
-  purchaseSources: PurchaseSource[];
   categories: string[];
   brands: string[];
   sizes: string[];
   colors: string[];
   onClose: () => void;
   onSave: (form: ProductForm, id?: string) => Promise<boolean>;
-  onInitialStock: (form: ProductForm, freight: number, funding: PurchaseFunding[], entryDate: string) => Promise<boolean>;
+  onInitialStock: (form: ProductForm) => void;
+  boxMode?: boolean;
+  onAddToBox?: (form: ProductForm) => void;
 }) {
   const categoryOptions = mergeOptions(CATEGORY_OPTIONS, categories);
   const colorOptions = mergeOptions(COLOR_OPTIONS, colors);
@@ -1082,10 +1206,6 @@ function ProductDrawer({
   );
   const [saving, setSaving] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
-  const [entryDate, setEntryDate] = useState(new Date().toLocaleDateString("en-CA"));
-  const [freight, setFreight] = useState(0);
-  const [funding, setFunding] = useState<PurchaseFunding[]>([]);
-  const [fundingTouched, setFundingTouched] = useState(false);
 
   function set<K extends keyof ProductForm>(key: K, value: ProductForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -1108,47 +1228,19 @@ function ProductDrawer({
 
   const margin = form.sale_price - form.real_cost;
   const marginPct = form.real_cost > 0 ? Math.round((margin / form.real_cost) * 100) : 0;
-  const paymentAccounts = accounts.filter((account) => account.active && account.is_postable &&
-    (["bank", "cash", "accounts_payable"].includes(account.system_key ?? "") || ["1106", "5211"].includes(account.code)));
-  const inventoryAccount = accounts.find((account) => account.active && account.is_postable && account.system_key === "inventory");
-  const bankAccount = paymentAccounts.find((account) => account.system_key === "bank");
-  const merchandise = Number((form.stock * form.real_cost).toFixed(2));
-  const total = Number((merchandise + freight).toFixed(2));
-  const fundingRows = fundingTouched ? funding : bankAccount ? [{ account_id: bankAccount.id, amount: total }] : [];
-  const funded = Number(fundingRows.reduce((sum, row) => sum + Number(row.amount || 0), 0).toFixed(2));
-  const validFunding = fundingRows.length > 0 && fundingRows.every((row) => {
-    const account = paymentAccounts.find((item) => item.id === row.account_id);
-    if (!account || !Number.isFinite(row.amount) || row.amount <= 0 || Number(row.amount.toFixed(2)) !== row.amount) return false;
-    if (["1106", "5211"].includes(account.code)) {
-      const source = purchaseSources.find((item) => item.entry_id === row.advance_entry_id && item.account_id === account.id);
-      return !!form.supplier_id && !!source && row.amount <= source.available &&
-        (!source.linked_supplier_id || source.linked_supplier_id === form.supplier_id) &&
-        (account.code !== "5211" || row.amount <= freight);
-    }
-    if (account.system_key === "accounts_payable") return !!form.supplier_id;
-    return true;
-  });
-  const reclassifiedFreight = fundingRows.reduce((sum, row) => sum +
-    (paymentAccounts.find((account) => account.id === row.account_id)?.code === "5211" ? Number(row.amount || 0) : 0), 0);
-  const accountingValid = product !== null || form.stock === 0 || (!!inventoryAccount && merchandise > 0 &&
-    Number.isFinite(freight) && freight >= 0 && Number(freight.toFixed(2)) === freight && !!entryDate &&
-    validFunding && reclassifiedFreight <= freight && funded === total);
-  const canSave = form.name.trim().length > 0 && form.sale_price > 0 && accountingValid &&
+  const canSave = form.name.trim().length > 0 && form.sale_price > 0 &&
+    (!boxMode || (Number.isInteger(form.stock) && form.stock > 0 && form.real_cost > 0)) &&
     (product !== null || form.stock === 0 || (Number.isInteger(form.stock) && form.stock > 0 && form.real_cost > 0));
-
-  function changeFunding(index: number, patch: Partial<PurchaseFunding>) {
-    const next = fundingRows.map((row, position) => position === index ? { ...row, ...patch } : row);
-    setFunding(next);
-    setFundingTouched(true);
-  }
 
   async function submit() {
     if (!canSave || saving) return;
+    if (boxMode && onAddToBox) {
+      onAddToBox(form);
+      return;
+    }
     if (!product && form.stock > 0) {
-      setSaving(true);
-      const saved = await onInitialStock(form, freight, fundingRows, entryDate);
-      setSaving(false);
-      if (saved) onClose();
+      onInitialStock(form);
+      onClose();
       return;
     }
     setSaving(true);
@@ -1162,8 +1254,8 @@ function ProductDrawer({
       <aside className="drawer product-drawer" role="dialog" aria-modal="true" aria-label="Producto" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
-            <p className="section-label">{product ? "Editar producto" : "Nuevo producto"}</p>
-            <h2>{product ? product.name : "Crear referencia"}</h2>
+            <p className="section-label">{product ? "Editar producto" : boxMode ? "Caja nueva" : "Nuevo producto"}</p>
+            <h2>{product ? product.name : boxMode ? "Agregar producto a la caja" : "Crear referencia"}</h2>
           </div>
           <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
@@ -1186,25 +1278,25 @@ function ProductDrawer({
           <ScanLine size={16} /> Leer etiqueta con foto
         </button>
 
-        {product && <div className="form-section">
+        <div className="form-section">
           <h3>Identificacion</h3>
           <div className="form-grid two">
             <label>
               Codigo interno
-              <input value={form.internal_code ?? ""} readOnly />
+              <input value={form.internal_code ?? ""} readOnly placeholder="Automatico al guardar" />
             </label>
             <label>
               QR / barra
-              <input value={form.qr_payload ?? ""} readOnly />
+              <input value={form.qr_payload ?? ""} readOnly placeholder="Automatico al guardar" />
             </label>
-            {product.created_at && (
+            {product?.created_at && (
               <label className="span-2">
                 Fecha de ingreso
                 <input value={new Date(product.created_at).toLocaleDateString("es-HN")} readOnly />
               </label>
             )}
           </div>
-        </div>}
+        </div>
 
         <div className="form-section">
           <h3>Producto</h3>
@@ -1274,7 +1366,7 @@ function ProductDrawer({
                 onChange={(event) => set("stock", Number(event.target.value))}
               />
               {product && <small className="field-help">Usa Ajustar inventario para cambiar existencias.</small>}
-              {!product && form.stock > 0 && <small className="field-help">La entrada y su partida se guardarán junto con el producto.</small>}
+              {!product && form.stock > 0 && <small className="field-help">{boxMode ? "Se sumará al total de esta caja; todavía no se guarda." : "Al continuar elegirás las cuentas de la compra. El producto aún no se guarda."}</small>}
             </label>
             <label>
               Minimo (alerta)
@@ -1294,59 +1386,9 @@ function ProductDrawer({
           </div>
         </div>
 
-        {!product && (
-          <div className="form-section">
-            <h3>Partida de entrada</h3>
-            <section className="purchase-allocation" aria-label="Distribución contable del inventario inicial">
-              <div className="purchase-funding-heading">
-                <div>
-                  <strong>Haber · ¿Cómo se cubre esta compra?</strong>
-                  <small>Elige Banco, Caja, anticipo a proveedor, gasto de envío ya pagado o cuentas por pagar.</small>
-                </div>
-                <button type="button" className="secondary-button" onClick={() => { setFunding([...fundingRows, { account_id: bankAccount?.id ?? "", amount: 0 }]); setFundingTouched(true); }}>+ Agregar cuenta</button>
-              </div>
-              {fundingRows.map((row, index) => {
-                const selected = paymentAccounts.find((account) => account.id === row.account_id);
-                const eligibleSources = purchaseSources.filter((source) => source.account_id === selected?.id &&
-                  (!source.linked_supplier_id || source.linked_supplier_id === form.supplier_id));
-                return <div className="purchase-funding-row" key={index}>
-                  <label>Cuenta<select value={row.account_id} onChange={(event) => changeFunding(index, { account_id: event.target.value, advance_entry_id: null })}>
-                    <option value="">Selecciona cuenta</option>{paymentAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
-                  </select></label>
-                  {["1106", "5211"].includes(selected?.code ?? "") && <label>Partida ya pagada<select value={row.advance_entry_id ?? ""} onChange={(event) => changeFunding(index, { advance_entry_id: event.target.value })}>
-                    <option value="">Selecciona la partida original</option>{eligibleSources.map((source) => <option key={source.entry_id} value={source.entry_id}>{source.entry_date} · {source.memo || "Pago anterior"} · saldo {lps(source.available)}</option>)}
-                  </select></label>}
-                  <label>Monto<input type="number" min="0.01" step="0.01" value={row.amount} onChange={(event) => changeFunding(index, { amount: Number(event.target.value) })} /></label>
-                  <button type="button" className="icon-button" aria-label={`Quitar cuenta ${index + 1}`} disabled={fundingRows.length === 1} onClick={() => { setFunding(fundingRows.filter((_, position) => position !== index)); setFundingTouched(true); }}><X size={16}/></button>
-                </div>;
-              })}
-              {fundingRows.length === 0 && <p className="purchase-advance-note">Configura una cuenta de Banco para completar automáticamente el haber.</p>}
-              <div className="purchase-allocation-grid">
-                <div className="purchase-allocation-total">
-                  <span>Debe · {inventoryAccount ? `${inventoryAccount.code} ${inventoryAccount.name}` : "Cuenta de inventario no configurada"}</span>
-                  <strong>{lps(merchandise + freight)}</strong>
-                </div>
-                <label>Fecha de compra
-                  <input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} />
-                </label>
-                <label>Flete para traer esta mercadería
-                  <input type="number" min={0} step="0.01" value={freight} onChange={(event) => setFreight(Number(event.target.value))} />
-                  <small>Se suma al costo del inventario. No incluye guías cobradas al cliente.</small>
-                </label>
-              </div>
-              <div className="purchase-funding-balance" data-balanced={total > 0 && funded === total}>
-                <span>Total de entrada: {lps(total)} · Distribuido: {lps(funded)}</span>
-                <strong>{total > 0 && funded === total ? "Partida cuadrada" : total === 0 ? "Ingresa stock y costo para calcular la partida" : `Diferencia ${lps(total - funded)}`}</strong>
-              </div>
-              {fundingRows.some((row) => ["1106", "5211"].includes(paymentAccounts.find((account) => account.id === row.account_id)?.code ?? "")) &&
-                <p className="purchase-advance-note">Los montos de 1106 y 5211 ya salieron de Banco o Caja en su partida original. Aquí se aplican al inventario sin pagarlos otra vez.</p>}
-            </section>
-          </div>
-        )}
-
         <div className="drawer-footer">
           <button className="primary-button wide" disabled={!canSave || saving} aria-busy={saving} onClick={() => void submit()}>
-            <Save size={18} /> {saving ? "Guardando..." : !product && form.stock > 0 ? "Guardar producto y entrada" : "Guardar producto"}
+            <Save size={18} /> {saving ? "Guardando..." : boxMode ? "Agregar producto a la caja" : !product && form.stock > 0 ? "Continuar a cuentas y entrada" : "Guardar producto"}
           </button>
         </div>
       </aside>
@@ -1444,7 +1486,9 @@ function PurchaseModal({
   initialSupplierId = "",
   initialLines = [],
   requestId = null,
+  boxMode = false,
   onClose,
+  onSaved,
   onSave,
 }: {
   products: Product[];
@@ -1454,7 +1498,9 @@ function PurchaseModal({
   initialSupplierId?: string;
   initialLines?: PurchaseLine[];
   requestId?: string | null;
+  boxMode?: boolean;
   onClose: () => void;
+  onSaved?: () => void;
   onSave: (supplierId: string | null, lines: PurchaseLine[], freight: number, funding: PurchaseFunding[], entryDate: string, requestId?: string | null) => Promise<boolean>;
 }) {
   const [supplierId, setSupplierId] = useState(initialSupplierId);
@@ -1537,7 +1583,7 @@ function PurchaseModal({
     setSaving(true);
     const saved = await onSave(supplierId || null, lines, freight, fundingRows, entryDate, requestId);
     setSaving(false);
-    if (saved) onClose();
+    if (saved) (onSaved ?? onClose)();
   }
 
   return (
@@ -1545,8 +1591,8 @@ function PurchaseModal({
       <aside className="drawer wide-drawer" role="dialog" aria-modal="true" aria-label="Entrada de pedido" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
-            <p className="section-label">Entrada de mercaderia</p>
-            <h2>Registrar compra / entrada</h2>
+            <p className="section-label">{boxMode ? "Cierre de caja" : "Entrada de mercaderia"}</p>
+            <h2>{boxMode ? "Cuadrar cuentas de la caja" : "Registrar compra / entrada"}</h2>
           </div>
           <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
@@ -1554,7 +1600,7 @@ function PurchaseModal({
         </div>
 
         <div className="purchase-intro">
-          <strong>La entrada suma existencias y actualiza el costo promedio.</strong>
+          <strong>{boxMode ? "El total de todos los productos debe coincidir exactamente con las cuentas elegidas." : "La entrada suma existencias y actualiza el costo promedio."}</strong>
           <span>{lines.some((line) => line.newProduct)
             ? "Las referencias nuevas, sus existencias y la partida se guardan juntas al registrar. Si cierras, se descarta este borrador."
             : "Cada producto suma existencias por separado. Las ventas y facturas ya emitidas no cambian."}</span>
@@ -1687,7 +1733,7 @@ function PurchaseModal({
             <p className="purchase-advance-note">Los montos de 1106 y 5211 ya salieron de Banco o Caja en su partida original. Aquí se aplican al inventario sin pagarlos otra vez. La reclasificación de 5211 no puede superar el flete de este lote; confirma que el gasto corresponde a estos productos.</p>}
         </section>
         <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
-          <PackagePlus size={18} /> {saving ? "Registrando..." : "Registrar entrada y sumar stock"}
+          <PackagePlus size={18} /> {saving ? "Registrando..." : boxMode ? "Registrar caja completa" : "Registrar entrada y sumar stock"}
         </button>
       </aside>
     </div>
