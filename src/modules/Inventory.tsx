@@ -279,6 +279,7 @@ export function Inventory({
   const [boxAdding, setBoxAdding] = useState(false);
   const [boxLines, setBoxLines] = useState<PurchaseLine[]>([]);
   const [boxSupplierId, setBoxSupplierId] = useState("");
+  const [boxEditingId, setBoxEditingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function startNewProductPurchase(lines: PurchaseLine[], supplierId: string | null) {
@@ -480,7 +481,7 @@ export function Inventory({
             <button className="secondary-button" onClick={() => setMatrixing(true)}>
               <PackagePlus size={16} /> Crear por matriz
             </button>
-            <button className="secondary-button" onClick={() => { setBoxLines([]); setBoxSupplierId(""); setBoxOpen(true); setBoxAdding(true); }}>
+            <button className="secondary-button" onClick={() => { setBoxLines([]); setBoxSupplierId(""); setBoxEditingId(null); setBoxOpen(true); setBoxAdding(true); }}>
               <PackagePlus size={16} /> Caja nueva
             </button>
             <button className="primary-button" onClick={() => setCreating(true)}>
@@ -597,7 +598,8 @@ export function Inventory({
           suppliers={suppliers}
           supplierId={boxSupplierId}
           onSupplierChange={setBoxSupplierId}
-          onAdd={() => setBoxAdding(true)}
+          onAdd={() => { setBoxEditingId(null); setBoxAdding(true); }}
+          onEdit={(id) => { setBoxEditingId(id); setBoxAdding(true); }}
           onRemove={(id) => setBoxLines((current) => current.filter((line) => line.product.id !== id))}
           onClose={() => { setBoxOpen(false); setBoxLines([]); setBoxSupplierId(""); }}
           onFinish={() => {
@@ -621,13 +623,21 @@ export function Inventory({
           sizes={sizes}
           colors={colors}
           boxMode
-          onClose={() => setBoxAdding(false)}
+          initialForm={boxEditingId ? boxLines.find((line) => line.product.id === boxEditingId)?.newProduct : undefined}
+          onClose={() => { setBoxAdding(false); setBoxEditingId(null); }}
           onSave={saveProduct}
           onInitialStock={() => undefined}
           onAddToBox={(form) => {
-            setBoxLines((current) => [...current, newPurchaseLine(form, `caja-${Date.now()}-${current.length}`)]);
+            setBoxLines((current) => boxEditingId
+              ? current.map((line) => {
+                if (line.product.id !== boxEditingId) return line;
+                const updated = newPurchaseLine(form, "editada");
+                return { ...updated, product: { ...updated.product, id: line.product.id } };
+              })
+              : [...current, newPurchaseLine(form, `caja-${Date.now()}-${current.length}`)]);
             if (!boxSupplierId && form.supplier_id) setBoxSupplierId(form.supplier_id);
             setBoxAdding(false);
+            setBoxEditingId(null);
           }}
         />
       )}
@@ -1086,6 +1096,7 @@ function BoxDraftModal({
   supplierId,
   onSupplierChange,
   onAdd,
+  onEdit,
   onRemove,
   onClose,
   onFinish,
@@ -1095,6 +1106,7 @@ function BoxDraftModal({
   supplierId: string;
   onSupplierChange: (supplierId: string) => void;
   onAdd: () => void;
+  onEdit: (id: string) => void;
   onRemove: (id: string) => void;
   onClose: () => void;
   onFinish: () => void;
@@ -1131,13 +1143,18 @@ function BoxDraftModal({
         <div className="purchase-lines">
           {lines.length === 0 ? <EmptyWork title="Caja vacía" text="Agrega el primer producto que llegó en esta caja." /> : (
             <table className="purchase-table">
-              <thead><tr><th>Producto</th><th>Cantidad</th><th>Costo unitario</th><th>Total</th><th></th></tr></thead>
+              <thead><tr><th>Producto y detalle</th><th>Clasificación</th><th>Cantidad</th><th>Costo</th><th>Venta</th><th>Total</th><th>Acciones</th></tr></thead>
               <tbody>{lines.map((line) => <tr key={line.product.id}>
-                <td><strong>{line.product.name}</strong><span className="inv-code">{[line.product.category, line.product.brand, line.product.size, line.product.color].filter(Boolean).join(" · ") || "Referencia nueva"}</span></td>
+                <td><strong>{line.product.name}</strong><span className="inv-code">{line.product.description || "Sin descripción"}</span><span className="inv-code">{[line.product.gender, line.product.season].filter(Boolean).join(" · ")}</span></td>
+                <td><strong>{line.product.category || "Sin categoría"}</strong><span className="inv-code">{[line.product.brand, line.product.size, line.product.color].filter(Boolean).join(" · ") || "Sin variantes"}</span></td>
                 <td><strong>{line.qty}</strong></td>
                 <td>{lps(line.unit_cost)}</td>
+                <td>{lps(line.product.sale_price)}</td>
                 <td><strong>{lps(line.qty * line.unit_cost)}</strong></td>
-                <td><button type="button" className="icon-button" aria-label={`Quitar ${line.product.name} de la caja`} onClick={() => onRemove(line.product.id)}><Trash2 size={16} /></button></td>
+                <td><div className="row-actions">
+                  <button type="button" className="icon-button" aria-label={`Editar ${line.product.name}`} title="Editar producto" onClick={() => onEdit(line.product.id)}><Edit3 size={16} /></button>
+                  <button type="button" className="icon-button danger" aria-label={`Quitar ${line.product.name} de la caja`} title="Quitar de la caja" onClick={() => onRemove(line.product.id)}><Trash2 size={16} /></button>
+                </div></td>
               </tr>)}</tbody>
             </table>
           )}
@@ -1163,6 +1180,7 @@ function ProductDrawer({
   onSave,
   onInitialStock,
   boxMode = false,
+  initialForm,
   onAddToBox,
 }: {
   product: Product | null;
@@ -1175,6 +1193,7 @@ function ProductDrawer({
   onSave: (form: ProductForm, id?: string) => Promise<boolean>;
   onInitialStock: (form: ProductForm) => void;
   boxMode?: boolean;
+  initialForm?: ProductForm;
   onAddToBox?: (form: ProductForm) => void;
 }) {
   const categoryOptions = mergeOptions(CATEGORY_OPTIONS, categories);
@@ -1202,7 +1221,7 @@ function ProductDrawer({
           qr_payload: product.qr_payload ?? "",
           stock: product.stock,
         }
-      : emptyProduct,
+      : initialForm ?? emptyProduct,
   );
   const [saving, setSaving] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
@@ -1255,7 +1274,7 @@ function ProductDrawer({
         <div className="panel-heading">
           <div>
             <p className="section-label">{product ? "Editar producto" : boxMode ? "Caja nueva" : "Nuevo producto"}</p>
-            <h2>{product ? product.name : boxMode ? "Agregar producto a la caja" : "Crear referencia"}</h2>
+            <h2>{product ? product.name : boxMode ? initialForm ? "Editar producto de la caja" : "Agregar producto a la caja" : "Crear referencia"}</h2>
           </div>
           <button className="icon-button" aria-label="Cerrar ventana" onClick={onClose}>
             <X size={18} />
@@ -1388,7 +1407,7 @@ function ProductDrawer({
 
         <div className="drawer-footer">
           <button className="primary-button wide" disabled={!canSave || saving} aria-busy={saving} onClick={() => void submit()}>
-            <Save size={18} /> {saving ? "Guardando..." : boxMode ? "Agregar producto a la caja" : !product && form.stock > 0 ? "Continuar a cuentas y entrada" : "Guardar producto"}
+            <Save size={18} /> {saving ? "Guardando..." : boxMode ? initialForm ? "Actualizar producto de la caja" : "Agregar producto a la caja" : !product && form.stock > 0 ? "Continuar a cuentas y entrada" : "Guardar producto"}
           </button>
         </div>
       </aside>
