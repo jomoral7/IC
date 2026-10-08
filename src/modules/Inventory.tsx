@@ -570,6 +570,8 @@ export function Inventory({
         <ProductDrawer
           product={editing}
           suppliers={suppliers}
+          accounts={accounts}
+          purchaseSources={purchaseSources}
           categories={categories}
           brands={brands}
           sizes={sizes}
@@ -579,9 +581,15 @@ export function Inventory({
             setEditing(null);
           }}
           onSave={saveProduct}
-          onInitialStock={(form) => {
-            startNewProductPurchase([newPurchaseLine(form, "individual")], form.supplier_id);
-          }}
+          onInitialStock={(form, freight, funding, entryDate) =>
+            registerPurchaseBatch(
+              form.supplier_id,
+              [newPurchaseLine(form, "individual")],
+              freight,
+              funding,
+              entryDate,
+            )
+          }
         />
       )}
       {adjusting && (
@@ -1023,6 +1031,8 @@ function OrdersView({
 function ProductDrawer({
   product,
   suppliers,
+  accounts,
+  purchaseSources,
   categories,
   brands,
   sizes,
@@ -1033,13 +1043,15 @@ function ProductDrawer({
 }: {
   product: Product | null;
   suppliers: Party[];
+  accounts: Account[];
+  purchaseSources: PurchaseSource[];
   categories: string[];
   brands: string[];
   sizes: string[];
   colors: string[];
   onClose: () => void;
   onSave: (form: ProductForm, id?: string) => Promise<boolean>;
-  onInitialStock: (form: ProductForm) => void;
+  onInitialStock: (form: ProductForm, freight: number, funding: PurchaseFunding[], entryDate: string) => Promise<boolean>;
 }) {
   const categoryOptions = mergeOptions(CATEGORY_OPTIONS, categories);
   const colorOptions = mergeOptions(COLOR_OPTIONS, colors);
@@ -1070,6 +1082,10 @@ function ProductDrawer({
   );
   const [saving, setSaving] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
+  const [entryDate, setEntryDate] = useState(new Date().toLocaleDateString("en-CA"));
+  const [freight, setFreight] = useState(0);
+  const [funding, setFunding] = useState<PurchaseFunding[]>([]);
+  const [fundingTouched, setFundingTouched] = useState(false);
 
   function set<K extends keyof ProductForm>(key: K, value: ProductForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -1092,14 +1108,47 @@ function ProductDrawer({
 
   const margin = form.sale_price - form.real_cost;
   const marginPct = form.real_cost > 0 ? Math.round((margin / form.real_cost) * 100) : 0;
-  const canSave = form.name.trim().length > 0 && form.sale_price > 0 &&
+  const paymentAccounts = accounts.filter((account) => account.active && account.is_postable &&
+    (["bank", "cash", "accounts_payable"].includes(account.system_key ?? "") || ["1106", "5211"].includes(account.code)));
+  const inventoryAccount = accounts.find((account) => account.active && account.is_postable && account.system_key === "inventory");
+  const bankAccount = paymentAccounts.find((account) => account.system_key === "bank");
+  const merchandise = Number((form.stock * form.real_cost).toFixed(2));
+  const total = Number((merchandise + freight).toFixed(2));
+  const fundingRows = fundingTouched ? funding : bankAccount ? [{ account_id: bankAccount.id, amount: total }] : [];
+  const funded = Number(fundingRows.reduce((sum, row) => sum + Number(row.amount || 0), 0).toFixed(2));
+  const validFunding = fundingRows.length > 0 && fundingRows.every((row) => {
+    const account = paymentAccounts.find((item) => item.id === row.account_id);
+    if (!account || !Number.isFinite(row.amount) || row.amount <= 0 || Number(row.amount.toFixed(2)) !== row.amount) return false;
+    if (["1106", "5211"].includes(account.code)) {
+      const source = purchaseSources.find((item) => item.entry_id === row.advance_entry_id && item.account_id === account.id);
+      return !!form.supplier_id && !!source && row.amount <= source.available &&
+        (!source.linked_supplier_id || source.linked_supplier_id === form.supplier_id) &&
+        (account.code !== "5211" || row.amount <= freight);
+    }
+    if (account.system_key === "accounts_payable") return !!form.supplier_id;
+    return true;
+  });
+  const reclassifiedFreight = fundingRows.reduce((sum, row) => sum +
+    (paymentAccounts.find((account) => account.id === row.account_id)?.code === "5211" ? Number(row.amount || 0) : 0), 0);
+  const accountingValid = product !== null || form.stock === 0 || (!!inventoryAccount && merchandise > 0 &&
+    Number.isFinite(freight) && freight >= 0 && Number(freight.toFixed(2)) === freight && !!entryDate &&
+    validFunding && reclassifiedFreight <= freight && funded === total);
+  const canSave = form.name.trim().length > 0 && form.sale_price > 0 && accountingValid &&
     (product !== null || form.stock === 0 || (Number.isInteger(form.stock) && form.stock > 0 && form.real_cost > 0));
+
+  function changeFunding(index: number, patch: Partial<PurchaseFunding>) {
+    const next = fundingRows.map((row, position) => position === index ? { ...row, ...patch } : row);
+    setFunding(next);
+    setFundingTouched(true);
+  }
 
   async function submit() {
     if (!canSave || saving) return;
     if (!product && form.stock > 0) {
-      onInitialStock(form);
-      onClose();
+      setSaving(true);
+      const saved = await onInitialStock(form, freight, fundingRows, entryDate);
+      setSaving(false);
+      if (saved) onClose();
       return;
     }
     setSaving(true);
@@ -1137,25 +1186,25 @@ function ProductDrawer({
           <ScanLine size={16} /> Leer etiqueta con foto
         </button>
 
-        <div className="form-section">
+        {product && <div className="form-section">
           <h3>Identificacion</h3>
           <div className="form-grid two">
             <label>
               Codigo interno
-              <input value={form.internal_code ?? ""} readOnly placeholder="Automatico al guardar" />
+              <input value={form.internal_code ?? ""} readOnly />
             </label>
             <label>
               QR / barra
-              <input value={form.qr_payload ?? ""} readOnly placeholder="Automatico al guardar" />
+              <input value={form.qr_payload ?? ""} readOnly />
             </label>
-            {product?.created_at && (
+            {product.created_at && (
               <label className="span-2">
                 Fecha de ingreso
                 <input value={new Date(product.created_at).toLocaleDateString("es-HN")} readOnly />
               </label>
             )}
           </div>
-        </div>
+        </div>}
 
         <div className="form-section">
           <h3>Producto</h3>
@@ -1225,7 +1274,7 @@ function ProductDrawer({
                 onChange={(event) => set("stock", Number(event.target.value))}
               />
               {product && <small className="field-help">Usa Ajustar inventario para cambiar existencias.</small>}
-              {!product && form.stock > 0 && <small className="field-help">Al continuar elegirás las cuentas de la compra. El producto aún no se guarda.</small>}
+              {!product && form.stock > 0 && <small className="field-help">La entrada y su partida se guardarán junto con el producto.</small>}
             </label>
             <label>
               Minimo (alerta)
@@ -1245,9 +1294,59 @@ function ProductDrawer({
           </div>
         </div>
 
+        {!product && (
+          <div className="form-section">
+            <h3>Partida de entrada</h3>
+            <section className="purchase-allocation" aria-label="Distribución contable del inventario inicial">
+              <div className="purchase-funding-heading">
+                <div>
+                  <strong>Haber · ¿Cómo se cubre esta compra?</strong>
+                  <small>Elige Banco, Caja, anticipo a proveedor, gasto de envío ya pagado o cuentas por pagar.</small>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => { setFunding([...fundingRows, { account_id: bankAccount?.id ?? "", amount: 0 }]); setFundingTouched(true); }}>+ Agregar cuenta</button>
+              </div>
+              {fundingRows.map((row, index) => {
+                const selected = paymentAccounts.find((account) => account.id === row.account_id);
+                const eligibleSources = purchaseSources.filter((source) => source.account_id === selected?.id &&
+                  (!source.linked_supplier_id || source.linked_supplier_id === form.supplier_id));
+                return <div className="purchase-funding-row" key={index}>
+                  <label>Cuenta<select value={row.account_id} onChange={(event) => changeFunding(index, { account_id: event.target.value, advance_entry_id: null })}>
+                    <option value="">Selecciona cuenta</option>{paymentAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
+                  </select></label>
+                  {["1106", "5211"].includes(selected?.code ?? "") && <label>Partida ya pagada<select value={row.advance_entry_id ?? ""} onChange={(event) => changeFunding(index, { advance_entry_id: event.target.value })}>
+                    <option value="">Selecciona la partida original</option>{eligibleSources.map((source) => <option key={source.entry_id} value={source.entry_id}>{source.entry_date} · {source.memo || "Pago anterior"} · saldo {lps(source.available)}</option>)}
+                  </select></label>}
+                  <label>Monto<input type="number" min="0.01" step="0.01" value={row.amount} onChange={(event) => changeFunding(index, { amount: Number(event.target.value) })} /></label>
+                  <button type="button" className="icon-button" aria-label={`Quitar cuenta ${index + 1}`} disabled={fundingRows.length === 1} onClick={() => { setFunding(fundingRows.filter((_, position) => position !== index)); setFundingTouched(true); }}><X size={16}/></button>
+                </div>;
+              })}
+              {fundingRows.length === 0 && <p className="purchase-advance-note">Configura una cuenta de Banco para completar automáticamente el haber.</p>}
+              <div className="purchase-allocation-grid">
+                <div className="purchase-allocation-total">
+                  <span>Debe · {inventoryAccount ? `${inventoryAccount.code} ${inventoryAccount.name}` : "Cuenta de inventario no configurada"}</span>
+                  <strong>{lps(merchandise + freight)}</strong>
+                </div>
+                <label>Fecha de compra
+                  <input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} />
+                </label>
+                <label>Flete para traer esta mercadería
+                  <input type="number" min={0} step="0.01" value={freight} onChange={(event) => setFreight(Number(event.target.value))} />
+                  <small>Se suma al costo del inventario. No incluye guías cobradas al cliente.</small>
+                </label>
+              </div>
+              <div className="purchase-funding-balance" data-balanced={total > 0 && funded === total}>
+                <span>Total de entrada: {lps(total)} · Distribuido: {lps(funded)}</span>
+                <strong>{total > 0 && funded === total ? "Partida cuadrada" : total === 0 ? "Ingresa stock y costo para calcular la partida" : `Diferencia ${lps(total - funded)}`}</strong>
+              </div>
+              {fundingRows.some((row) => ["1106", "5211"].includes(paymentAccounts.find((account) => account.id === row.account_id)?.code ?? "")) &&
+                <p className="purchase-advance-note">Los montos de 1106 y 5211 ya salieron de Banco o Caja en su partida original. Aquí se aplican al inventario sin pagarlos otra vez.</p>}
+            </section>
+          </div>
+        )}
+
         <div className="drawer-footer">
           <button className="primary-button wide" disabled={!canSave || saving} aria-busy={saving} onClick={() => void submit()}>
-            <Save size={18} /> {saving ? "Guardando..." : !product && form.stock > 0 ? "Continuar a cuentas y entrada" : "Guardar producto"}
+            <Save size={18} /> {saving ? "Guardando..." : !product && form.stock > 0 ? "Guardar producto y entrada" : "Guardar producto"}
           </button>
         </div>
       </aside>
