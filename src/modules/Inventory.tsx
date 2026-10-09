@@ -13,7 +13,7 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { Account, AdjustmentDraft, Party, Product, ProductForm, PurchaseFunding, PurchaseLine, PurchaseSource } from "../types";
 import { ADJUSTMENT_REASONS, CATEGORY_OPTIONS, COLOR_OPTIONS, GENDERS, emptyProduct, sizesForCategory } from "../types";
 import { lps, shortDate, stockState, suggestedRestock } from "../lib/format";
@@ -23,6 +23,18 @@ import { LabelScanner, type LabelFields } from "./LabelScanner";
 
 type Filter = "all" | "low" | "orders";
 type DateSort = "newest" | "oldest";
+const BOX_DRAFT_KEY = "ic_inventory_box_draft_v1";
+
+function loadBoxDraft(): { lines: PurchaseLine[]; supplierId: string } {
+  try {
+    const saved = localStorage.getItem(BOX_DRAFT_KEY);
+    if (!saved) return { lines: [], supplierId: "" };
+    const parsed = JSON.parse(saved) as { lines?: PurchaseLine[]; supplierId?: string };
+    return { lines: Array.isArray(parsed.lines) ? parsed.lines : [], supplierId: parsed.supplierId ?? "" };
+  } catch {
+    return { lines: [], supplierId: "" };
+  }
+}
 
 /** Une el catalogo precargado con los valores ya existentes, sin duplicados. */
 function mergeOptions(catalog: string[], existing: string[]): string[] {
@@ -226,7 +238,6 @@ export function Inventory({
   products,
   suppliers,
   accounts,
-  purchaseSources,
   categories,
   brands,
   sizes,
@@ -260,6 +271,7 @@ export function Inventory({
   stockRequests: any[];
   cancelOrder: (request: any) => Promise<void>;
 }) {
+  const savedBoxDraft = useMemo(loadBoxDraft, []);
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
@@ -277,10 +289,19 @@ export function Inventory({
   const [matrixing, setMatrixing] = useState(false);
   const [boxOpen, setBoxOpen] = useState(false);
   const [boxAdding, setBoxAdding] = useState(false);
-  const [boxLines, setBoxLines] = useState<PurchaseLine[]>([]);
-  const [boxSupplierId, setBoxSupplierId] = useState("");
+  const [boxLines, setBoxLines] = useState<PurchaseLine[]>(savedBoxDraft.lines);
+  const [boxSupplierId, setBoxSupplierId] = useState(savedBoxDraft.supplierId);
   const [boxEditingId, setBoxEditingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      if (boxLines.length === 0) localStorage.removeItem(BOX_DRAFT_KEY);
+      else localStorage.setItem(BOX_DRAFT_KEY, JSON.stringify({ lines: boxLines, supplierId: boxSupplierId }));
+    } catch {
+      // La caja sigue disponible durante esta sesión aunque el navegador bloquee el almacenamiento.
+    }
+  }, [boxLines, boxSupplierId]);
 
   function startNewProductPurchase(lines: PurchaseLine[], supplierId: string | null) {
     setPurchaseDraft({ supplierId: supplierId ?? "", lines, requestId: null });
@@ -481,8 +502,8 @@ export function Inventory({
             <button className="secondary-button" onClick={() => setMatrixing(true)}>
               <PackagePlus size={16} /> Crear por matriz
             </button>
-            <button className="secondary-button" onClick={() => { setBoxLines([]); setBoxSupplierId(""); setBoxEditingId(null); setBoxOpen(true); setBoxAdding(true); }}>
-              <PackagePlus size={16} /> Caja nueva
+            <button className="secondary-button" onClick={() => { setBoxEditingId(null); setBoxOpen(true); setBoxAdding(boxLines.length === 0); }}>
+              <PackagePlus size={16} /> {boxLines.length > 0 ? `Continuar caja (${boxLines.length})` : "Caja nueva"}
             </button>
             <button className="primary-button" onClick={() => setCreating(true)}>
               <Plus size={16} /> Nuevo producto
@@ -601,7 +622,8 @@ export function Inventory({
           onAdd={() => { setBoxEditingId(null); setBoxAdding(true); }}
           onEdit={(id) => { setBoxEditingId(id); setBoxAdding(true); }}
           onRemove={(id) => setBoxLines((current) => current.filter((line) => line.product.id !== id))}
-          onClose={() => { setBoxOpen(false); setBoxLines([]); setBoxSupplierId(""); }}
+          onClose={() => setBoxOpen(false)}
+          onDiscard={() => { setBoxOpen(false); setBoxLines([]); setBoxSupplierId(""); setBoxEditingId(null); }}
           onFinish={() => {
             const lines = boxLines.map((line) => ({
               ...line,
@@ -675,7 +697,6 @@ export function Inventory({
           products={products}
           suppliers={suppliers}
           accounts={accounts}
-          purchaseSources={purchaseSources}
           initialSupplierId={purchaseDraft?.supplierId ?? ""}
           initialLines={purchaseDraft?.lines ?? []}
           requestId={purchaseDraft?.requestId ?? null}
@@ -1099,6 +1120,7 @@ function BoxDraftModal({
   onEdit,
   onRemove,
   onClose,
+  onDiscard,
   onFinish,
 }: {
   lines: PurchaseLine[];
@@ -1109,6 +1131,7 @@ function BoxDraftModal({
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
   onClose: () => void;
+  onDiscard: () => void;
   onFinish: () => void;
 }) {
   const units = lines.reduce((sum, line) => sum + line.qty, 0);
@@ -1122,12 +1145,12 @@ function BoxDraftModal({
             <p className="section-label">Entrada por lote</p>
             <h2>Caja nueva</h2>
           </div>
-          <button className="icon-button" aria-label="Cerrar caja sin guardar" onClick={onClose}><X size={18} /></button>
+          <button className="icon-button" aria-label="Guardar borrador y cerrar" title="Guardar borrador y cerrar" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="purchase-intro">
           <strong>Agrega todos los productos que llegaron dentro de esta caja.</strong>
-          <span>Nada se registra todavía. Al cerrar la caja podrás distribuir el costo total entre las cuentas del Haber.</span>
+          <span>El borrador se guarda automáticamente en este navegador. Al cerrar la caja podrás distribuir el costo total entre las cuentas del Haber.</span>
         </div>
 
         <div className="form-section purchase-details-grid">
@@ -1161,6 +1184,7 @@ function BoxDraftModal({
         </div>
 
         <div className="drawer-footer">
+          <button type="button" className="secondary-button danger" onClick={onDiscard}><Trash2 size={16} /> Descartar borrador</button>
           <button type="button" className="secondary-button" onClick={onAdd}><Plus size={16} /> Agregar otro producto</button>
           <button type="button" className="primary-button" disabled={lines.length === 0 || total <= 0} onClick={onFinish}><Save size={17} /> Cerrar caja y cuadrar cuentas</button>
         </div>
@@ -1501,7 +1525,6 @@ function PurchaseModal({
   products,
   suppliers,
   accounts,
-  purchaseSources,
   initialSupplierId = "",
   initialLines = [],
   requestId = null,
@@ -1513,7 +1536,6 @@ function PurchaseModal({
   products: Product[];
   suppliers: Party[];
   accounts: Account[];
-  purchaseSources: PurchaseSource[];
   initialSupplierId?: string;
   initialLines?: PurchaseLine[];
   requestId?: string | null;
@@ -1528,6 +1550,7 @@ function PurchaseModal({
   const [saving, setSaving] = useState(false);
   const [entryDate, setEntryDate] = useState(new Date().toLocaleDateString("en-CA"));
   const [freight, setFreight] = useState(0);
+  const [includeFreight, setIncludeFreight] = useState(false);
   const [funding, setFunding] = useState<PurchaseFunding[]>([]);
   const [fundingTouched, setFundingTouched] = useState(false);
   const paymentAccounts = accounts.filter((account) => account.active && account.is_postable &&
@@ -1566,21 +1589,14 @@ function PurchaseModal({
   const validFunding = fundingRows.length > 0 && fundingRows.every((row) => {
     const account = paymentAccounts.find((item) => item.id === row.account_id);
     if (!account || !Number.isFinite(row.amount) || row.amount <= 0 || Number(row.amount.toFixed(2)) !== row.amount) return false;
-    if (["1106", "5211"].includes(account.code)) {
-      const source = purchaseSources.find((item) => item.entry_id === row.advance_entry_id && item.account_id === account.id);
-      return !!supplierId && !!source && row.amount <= source.available &&
-        (!source.linked_supplier_id || source.linked_supplier_id === supplierId) &&
-        (account.code !== "5211" || row.amount <= freight);
-    }
+    if (["1106", "5211"].includes(account.code)) return true;
     if (account.system_key === "accounts_payable") return !!supplierId;
     return true;
   });
-  const reclassifiedFreight = fundingRows.reduce((sum, row) => sum +
-    (paymentAccounts.find((account) => account.id === row.account_id)?.code === "5211" ? Number(row.amount || 0) : 0), 0);
   const canSave = !!inventoryAccount && lines.length > 0 && merchandise > 0 && Number.isFinite(freight) && freight >= 0 &&
     Number(freight.toFixed(2)) === freight && lines.every((l) => Number.isInteger(l.qty) && (l.newProduct ? l.qty >= 0 : l.qty > 0) &&
       Number.isFinite(l.unit_cost) && l.unit_cost >= 0 && Number(l.unit_cost.toFixed(2)) === l.unit_cost) &&
-    !!entryDate && validFunding && reclassifiedFreight <= freight && funded === total && !saving;
+    !!entryDate && validFunding && funded === total && !saving;
 
   function changeFunding(index: number, patch: Partial<PurchaseFunding>) {
     const next = fundingRows.map((row, position) => position === index ? { ...row, ...patch } : row);
@@ -1723,33 +1739,28 @@ function PurchaseModal({
 
         <section className="purchase-allocation" aria-label="Distribución de compra y pago">
           <div className="purchase-allocation-grid">
-            <label>Flete para traer esta mercadería
+            <label className="inv-switch"><input type="checkbox" checked={includeFreight} onChange={(event) => { setIncludeFreight(event.target.checked); if (!event.target.checked) setFreight(0); }} /><span>Incluir flete en esta caja</span></label>
+            {includeFreight && <label>Monto del flete
               <input type="number" min={0} step="0.01" value={freight} onChange={(event) => setFreight(Number(event.target.value))} />
-              <small>Se distribuye por valor entre los productos y aumenta su costo. No incluye guías cobradas al cliente.</small>
-            </label>
+              <small>Se distribuye por valor entre todos los productos y aumenta su costo. Puedes cubrirlo con la cuenta 5211 en el Haber.</small>
+            </label>}
             <div className="purchase-allocation-total"><span>Productos {lps(merchandise)} + flete {lps(freight)}</span><strong>Total {lps(total)}</strong></div>
           </div>
           <div className="purchase-funding-heading"><div><strong>Haber · ¿Cómo se cubre esta compra?</strong><small>Estas cuentas cubren el lote completo; el Debe de cada producto aparece arriba. Cada monto se registra una sola vez.</small></div>
             <button type="button" className="secondary-button" onClick={() => { setFunding([...fundingRows, { account_id: bankAccount?.id ?? "", amount: 0 }]); setFundingTouched(true); }}>+ Agregar cuenta</button>
           </div>
           {fundingRows.map((row, index) => {
-            const selected = paymentAccounts.find((account) => account.id === row.account_id);
-            const eligibleSources = purchaseSources.filter((source) => source.account_id === selected?.id &&
-              (!source.linked_supplier_id || source.linked_supplier_id === supplierId));
             return <div className="purchase-funding-row" key={index}>
               <label>Cuenta<select value={row.account_id} onChange={(event) => changeFunding(index, { account_id: event.target.value, advance_entry_id: null })}>
                 <option value="">Selecciona cuenta</option>{paymentAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
               </select></label>
-              {["1106", "5211"].includes(selected?.code ?? "") && <label>Partida ya pagada<select value={row.advance_entry_id ?? ""} onChange={(event) => changeFunding(index, { advance_entry_id: event.target.value })}>
-                <option value="">Selecciona la partida original</option>{eligibleSources.map((source) => <option key={source.entry_id} value={source.entry_id}>{source.entry_date} · {source.memo || "Pago anterior"} · saldo {lps(source.available)}</option>)}
-              </select></label>}
               <label>Monto<input type="number" min="0.01" step="0.01" value={row.amount} onChange={(event) => changeFunding(index, { amount: Number(event.target.value) })} /></label>
               <button type="button" className="icon-button" aria-label={`Quitar cuenta ${index + 1}`} disabled={fundingRows.length === 1} onClick={() => { setFunding(fundingRows.filter((_, position) => position !== index)); setFundingTouched(true); }}><X size={16}/></button>
             </div>;
           })}
           <div className="purchase-funding-balance" data-balanced={total > 0 && funded === total}><span>Distribuido: {lps(funded)}</span><strong>{total > 0 && funded === total ? "Partida cuadrada" : total === 0 ? "Agrega productos" : `Diferencia ${lps(total - funded)}`}</strong></div>
           {fundingRows.some((row) => ["1106", "5211"].includes(paymentAccounts.find((account) => account.id === row.account_id)?.code ?? "")) &&
-            <p className="purchase-advance-note">Los montos de 1106 y 5211 ya salieron de Banco o Caja en su partida original. Aquí se aplican al inventario sin pagarlos otra vez. La reclasificación de 5211 no puede superar el flete de este lote; confirma que el gasto corresponde a estos productos.</p>}
+            <p className="purchase-advance-note">El monto indicado se descarga directamente del saldo de la cuenta seleccionada. El sistema comprobará que la cuenta tenga saldo suficiente.</p>}
         </section>
         <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <PackagePlus size={18} /> {saving ? "Registrando..." : boxMode ? "Registrar caja completa" : "Registrar entrada y sumar stock"}
