@@ -1553,8 +1553,9 @@ function PurchaseModal({
   const [includeFreight, setIncludeFreight] = useState(false);
   const [funding, setFunding] = useState<PurchaseFunding[]>([]);
   const [fundingTouched, setFundingTouched] = useState(false);
-  const paymentAccounts = accounts.filter((account) => account.active && account.is_postable &&
-    (["bank", "cash", "accounts_payable"].includes(account.system_key ?? "") || ["1106", "5211"].includes(account.code)));
+  const paymentAccounts = accounts
+    .filter((account) => account.active && account.is_postable && account.system_key !== "inventory")
+    .sort((left, right) => left.code.localeCompare(right.code, "es", { numeric: true }));
   const inventoryAccount = accounts.find((account) => account.active && account.is_postable && account.system_key === "inventory");
   const bankAccount = paymentAccounts.find((account) => account.system_key === "bank");
 
@@ -1589,7 +1590,6 @@ function PurchaseModal({
   const validFunding = fundingRows.length > 0 && fundingRows.every((row) => {
     const account = paymentAccounts.find((item) => item.id === row.account_id);
     if (!account || !Number.isFinite(row.amount) || row.amount <= 0 || Number(row.amount.toFixed(2)) !== row.amount) return false;
-    if (["1106", "5211"].includes(account.code)) return true;
     if (account.system_key === "accounts_payable") return !!supplierId;
     return true;
   });
@@ -1623,7 +1623,7 @@ function PurchaseModal({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer wide-drawer" role="dialog" aria-modal="true" aria-label="Entrada de pedido" onClick={(e) => e.stopPropagation()}>
+      <aside className={`drawer wide-drawer ${boxMode ? "box-close-drawer" : ""}`} role="dialog" aria-modal="true" aria-label="Entrada de pedido" onClick={(e) => e.stopPropagation()}>
         <div className="panel-heading">
           <div>
             <p className="section-label">{boxMode ? "Cierre de caja" : "Entrada de mercaderia"}</p>
@@ -1634,10 +1634,10 @@ function PurchaseModal({
           </button>
         </div>
 
-        <div className="purchase-intro">
-          <strong>{boxMode ? "El total de todos los productos debe coincidir exactamente con las cuentas elegidas." : "La entrada suma existencias y actualiza el costo promedio."}</strong>
+        <div className={`purchase-intro ${boxMode ? "box-close-intro" : ""}`}>
+          <strong>{boxMode ? "Revisa el lote y distribuye el total." : "La entrada suma existencias y actualiza el costo promedio."}</strong>
           <span>{lines.some((line) => line.newProduct)
-            ? "Las referencias nuevas, sus existencias y la partida se guardan juntas al registrar. Si cierras, se descarta este borrador."
+            ? boxMode ? "Productos, existencias y partida se registran juntos." : "Las referencias nuevas, sus existencias y la partida se guardan juntas al registrar. Si cierras, se descarta este borrador."
             : "Cada producto suma existencias por separado. Las ventas y facturas ya emitidas no cambian."}</span>
         </div>
         <div className="form-section purchase-details-grid">
@@ -1675,7 +1675,8 @@ function PurchaseModal({
           </label>}
         </div>
 
-        <div className="purchase-lines">
+        <div className={`purchase-lines ${boxMode ? "box-close-lines" : ""}`}>
+          {boxMode && <div className="box-close-step"><span>1</span><div><strong>Productos de la caja</strong><small>Confirma cantidades y costos antes de cuadrar las cuentas.</small></div></div>}
           {lines.length === 0 ? (
             <EmptyWork title="Sin productos" text="Busca y agrega los productos que llegaron en el pedido." />
           ) : (
@@ -1737,16 +1738,16 @@ function PurchaseModal({
           )}
         </div>
 
-        <section className="purchase-allocation" aria-label="Distribución de compra y pago">
+        <section className={`purchase-allocation ${boxMode ? "box-close-allocation" : ""}`} aria-label="Distribución de compra y pago">
+          {boxMode && <div className="box-close-step"><span>2</span><div><strong>Cuadra el Haber</strong><small>El total distribuido debe ser igual al costo de la caja.</small></div></div>}
           <div className="purchase-allocation-grid">
-            <label className="inv-switch"><input type="checkbox" checked={includeFreight} onChange={(event) => { setIncludeFreight(event.target.checked); if (!event.target.checked) setFreight(0); }} /><span>Incluir flete en esta caja</span></label>
+            <label className="inv-switch box-freight-toggle"><input type="checkbox" checked={includeFreight} onChange={(event) => { setIncludeFreight(event.target.checked); if (!event.target.checked) setFreight(0); }} /><span><strong>Agregar flete</strong><small>Opcional · se reparte entre los productos.</small></span></label>
             {includeFreight && <label>Monto del flete
               <input type="number" min={0} step="0.01" value={freight} onChange={(event) => setFreight(Number(event.target.value))} />
-              <small>Se distribuye por valor entre todos los productos y aumenta su costo. Puedes cubrirlo con la cuenta 5211 en el Haber.</small>
             </label>}
-            <div className="purchase-allocation-total"><span>Productos {lps(merchandise)} + flete {lps(freight)}</span><strong>Total {lps(total)}</strong></div>
+            <div className="purchase-allocation-total"><span>Productos {lps(merchandise)}{includeFreight ? ` + flete ${lps(freight)}` : ""}</span><strong>Total {lps(total)}</strong></div>
           </div>
-          <div className="purchase-funding-heading"><div><strong>Haber · ¿Cómo se cubre esta compra?</strong><small>Estas cuentas cubren el lote completo; el Debe de cada producto aparece arriba. Cada monto se registra una sola vez.</small></div>
+          <div className="purchase-funding-heading"><div><strong>Cuentas que se acreditan</strong><small>Elige por número o nombre y asigna el monto de cada cuenta.</small></div>
             <button type="button" className="secondary-button" onClick={() => { setFunding([...fundingRows, { account_id: bankAccount?.id ?? "", amount: 0 }]); setFundingTouched(true); }}>+ Agregar cuenta</button>
           </div>
           {fundingRows.map((row, index) => {
@@ -1759,8 +1760,8 @@ function PurchaseModal({
             </div>;
           })}
           <div className="purchase-funding-balance" data-balanced={total > 0 && funded === total}><span>Distribuido: {lps(funded)}</span><strong>{total > 0 && funded === total ? "Partida cuadrada" : total === 0 ? "Agrega productos" : `Diferencia ${lps(total - funded)}`}</strong></div>
-          {fundingRows.some((row) => ["1106", "5211"].includes(paymentAccounts.find((account) => account.id === row.account_id)?.code ?? "")) &&
-            <p className="purchase-advance-note">El monto indicado se descarga directamente del saldo de la cuenta seleccionada. El sistema comprobará que la cuenta tenga saldo suficiente.</p>}
+          {fundingRows.some((row) => ["asset", "expense"].includes(paymentAccounts.find((account) => account.id === row.account_id)?.type ?? "")) &&
+            <p className="purchase-advance-note">Al usar una cuenta de activo o gasto, el sistema descarga ese monto de su saldo y comprueba que sea suficiente.</p>}
         </section>
         <button className="primary-button wide" disabled={!canSave} aria-busy={saving} onClick={() => void submit()}>
           <PackagePlus size={18} /> {saving ? "Registrando..." : boxMode ? "Registrar caja completa" : "Registrar entrada y sumar stock"}

@@ -6864,10 +6864,175 @@ td:last-child {
 .purchase-funding-balance { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; color: #9a4e22; font-size: 12px; }
 .purchase-funding-balance[data-balanced="true"] { color: #127359; }
 .purchase-advance-note { margin: 8px 0 0; color: #566b7e; font-size: 11px; line-height: 1.45; }
+
+/* Cierre de caja: lectura compacta en dos pasos */
+.drawer.wide-drawer.box-close-drawer {
+  width: min(920px, calc(100vw - 32px));
+  max-width: 920px;
+}
+.box-close-drawer .panel-heading {
+  padding-block: 12px;
+}
+.box-close-drawer .panel-heading h2 {
+  font-size: 19px;
+}
+.box-close-intro {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+}
+.box-close-intro strong::after {
+  content: "·";
+  margin-left: 8px;
+  color: #8ba0b0;
+}
+.box-close-drawer .purchase-details-grid {
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 10px;
+  padding-block: 4px 10px;
+}
+.box-close-drawer .purchase-details-grid label,
+.box-close-drawer .purchase-search label {
+  gap: 4px;
+  font-size: 11px;
+}
+.box-close-drawer .purchase-details-grid select,
+.box-close-drawer .purchase-details-grid input {
+  min-height: 36px;
+}
+.box-close-lines {
+  margin: 4px 0 0;
+}
+.box-close-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 9px 8px;
+}
+.box-close-step > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #123b52;
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+}
+.box-close-step > div {
+  display: grid;
+  gap: 1px;
+}
+.box-close-step strong {
+  color: #123b52;
+  font-size: 13px;
+}
+.box-close-step small {
+  color: #687e90;
+  font-size: 11px;
+}
+.box-close-drawer .purchase-table th {
+  padding: 6px 8px;
+  font-size: 10px;
+}
+.box-close-drawer .purchase-table td {
+  padding: 8px;
+}
+.box-close-drawer .purchase-table td strong {
+  font-size: 13px;
+}
+.box-close-allocation {
+  padding: 8px 20px 10px;
+}
+.box-close-allocation > .box-close-step {
+  padding-inline: 0;
+}
+.box-close-allocation .purchase-allocation-grid {
+  grid-template-columns: minmax(210px, 1fr) minmax(180px, 1.8fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #dce6ed;
+  border-radius: 8px;
+  background: white;
+}
+.box-close-allocation .box-freight-toggle {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.box-freight-toggle > span {
+  display: grid;
+  gap: 1px;
+}
+.box-freight-toggle > span strong {
+  color: #173d53;
+  font-size: 12px;
+}
+.box-freight-toggle > span small {
+  color: #718494;
+  font-size: 10px;
+}
+.box-close-allocation .purchase-allocation-grid label:not(.box-freight-toggle) {
+  display: grid;
+  grid-template-columns: auto 120px;
+  align-items: center;
+  gap: 8px;
+}
+.box-close-allocation .purchase-allocation-grid label input {
+  min-height: 34px;
+}
+.box-close-allocation .purchase-allocation-total {
+  min-width: 150px;
+}
+.box-close-allocation .purchase-allocation-total strong {
+  font-size: 17px;
+}
+.box-close-allocation .purchase-funding-heading {
+  margin: 12px 0 6px;
+}
+.box-close-allocation .purchase-funding-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px 36px;
+  align-items: end;
+  margin: 6px 0;
+}
+.box-close-allocation .purchase-funding-row label {
+  min-width: 0;
+}
+.box-close-allocation .purchase-funding-row label input,
+.box-close-allocation .purchase-funding-row label select,
+.box-close-allocation .purchase-funding-row .icon-button {
+  min-height: 36px;
+  height: 36px;
+}
+.box-close-allocation .purchase-funding-balance {
+  padding-top: 7px;
+}
+.box-close-drawer > .primary-button.wide {
+  min-height: 40px;
+  margin-top: 0;
+}
 @media (max-width: 700px) {
   .purchase-allocation-grid { grid-template-columns: 1fr; }
   .purchase-allocation-total { text-align: left; }
   .purchase-funding-heading, .purchase-funding-row { align-items: stretch; flex-wrap: wrap; }
   .purchase-funding-row label:first-child, .purchase-funding-row label:nth-child(2) { flex-basis: 100%; }
   .purchase-funding-row label:last-of-type { flex: 1 1 120px; }
+  .box-close-intro { align-items: flex-start; flex-direction: column; }
+  .box-close-intro strong::after { content: none; }
+  .box-close-drawer .purchase-details-grid { grid-template-columns: 1fr; }
+  .box-close-allocation .purchase-allocation-grid,
+  .box-close-allocation .purchase-funding-row { grid-template-columns: 1fr; }
+  .box-close-allocation .purchase-allocation-grid label:not(.box-freight-toggle) { grid-template-columns: 1fr; }
+  .box-close-allocation .purchase-allocation-total { text-align: left; }
+  .box-close-allocation .purchase-funding-row .icon-button { width: 100%; }
 }
