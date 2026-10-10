@@ -1554,7 +1554,8 @@ function PurchaseModal({
   const [funding, setFunding] = useState<PurchaseFunding[]>([]);
   const [fundingTouched, setFundingTouched] = useState(false);
   const paymentAccounts = accounts
-    .filter((account) => account.active && account.is_postable && account.system_key !== "inventory")
+    .filter((account) => account.active && account.is_postable && account.system_key !== "inventory" &&
+      (["bank", "cash", "accounts_payable"].includes(account.system_key ?? "") || ["asset", "expense"].includes(account.type)))
     .sort((left, right) => left.code.localeCompare(right.code, "es", { numeric: true }));
   const inventoryAccount = accounts.find((account) => account.active && account.is_postable && account.system_key === "inventory");
   const bankAccount = paymentAccounts.find((account) => account.system_key === "bank");
