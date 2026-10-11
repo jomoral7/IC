@@ -50,7 +50,7 @@ function labelInfo(product: Product) {
     category: product.category || "",
     description: labelDescription(product),
     price: lps(product.sale_price),
-    variant: [product.brand, ...(isPersonalCare(product) ? [] : [product.size]), product.color, ...(isPersonalCare(product) ? [] : [product.gender])]
+    variant: [product.category, product.brand, ...(isPersonalCare(product) ? [] : [product.size]), product.color, ...(isPersonalCare(product) ? [] : [product.gender])]
       .filter(Boolean)
       .join(" · "),
   };
@@ -118,11 +118,11 @@ export function Labels({ products }: { products: Product[] }) {
       const cells = labels
         .map(
           (l) => `<div class="cell">
-            <img src="${cache.get(l.payload)}" />
             <div class="code">${esc(l.code)}</div>
+            <img src="${cache.get(l.payload)}" />
             <div class="name">${esc(l.name)}</div>
             ${l.description ? `<div class="description">${esc(l.description)}</div>` : ""}
-            <div class="variant">${esc(l.variant || l.category)}</div>
+            ${l.variant ? `<div class="variant">${esc(l.variant)}</div>` : ""}
             <div class="price">${esc(l.price)}</div>
           </div>`,
         )
@@ -134,12 +134,13 @@ export function Labels({ products }: { products: Product[] }) {
           body { margin: 0; font-family: Arial, sans-serif; }
           .sheet { display: grid; grid-template-columns: repeat(${cols}, ${cellW}mm); justify-content: center; }
           .cell { width: ${cellW}mm; height: ${cellH}mm; display: flex; flex-direction: column; align-items: center;
-                  padding-top: 1mm; text-align: center; overflow: hidden; break-inside: avoid; }
-          .cell img { width: ${qr}mm; height: ${qr}mm; }
-          .code { font-weight: bold; font-size: 8pt; margin-top: .8mm; }
-          .name { font-weight: bold; font-size: 5.8pt; line-height: 1.05; max-height: 5.8mm; overflow: hidden; padding: 0 1mm; }
-          .description, .variant { font-size: 4.8pt; line-height: 1.05; max-height: 4.5mm; overflow: hidden; color: #425466; padding: 0 1mm; }
-          .price { font-weight: bold; font-size: 5.4pt; line-height: 1.05; margin-top: .3mm; }
+                  padding: 1mm; text-align: center; overflow: hidden; break-inside: avoid; border: .2mm solid #cbd5df;
+                  border-radius: 1.4mm; margin: .5mm; }
+          .cell img { width: ${qr}mm; height: ${qr}mm; margin: .3mm 0 .6mm; }
+          .code { font-weight: bold; font-size: 6.2pt; line-height: 1; letter-spacing: .15pt; color: #405366; }
+          .name { font-weight: bold; font-size: 6.1pt; line-height: 1.08; max-height: 5.5mm; overflow: hidden; padding: 0 .5mm; color: #102c40; }
+          .description, .variant { font-size: 4.8pt; line-height: 1.05; max-height: 3.8mm; overflow: hidden; color: #526779; padding: 0 .5mm; }
+          .price { font-weight: bold; font-size: 7pt; line-height: 1; margin-top: .5mm; padding-top: .5mm; border-top: .2mm solid #d5dde5; color: #102c40; }
         </style></head>
         <body><div class="sheet">${cells}</div></body></html>`;
 
@@ -205,40 +206,50 @@ export function Labels({ products }: { products: Product[] }) {
         const y = offsetY + row * cellH;
         const qrX = x + (cellW - qr) / 2;
         const cx = x + cellW / 2;
-        pdf.addImage(cache.get(l.payload)!, "PNG", qrX, y, qr, qr);
+        pdf.setDrawColor("#cbd5df");
+        pdf.setLineWidth(0.2);
+        pdf.roundedRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1, 1.2, 1.2, "S");
         pdf.setTextColor("#0B2533");
-        // Codigo interno
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(7);
-        pdf.text(l.code, cx, y + qr + 3.5, { align: "center" });
-        // Datos del producto en formato compacto para conservar legibilidad en la etiqueta.
+        pdf.setTextColor("#405366");
+        pdf.setFontSize(size === "chica" ? 5.4 : 6.2);
+        pdf.text(l.code, cx, y + 3.2, { align: "center", maxWidth: cellW - 3 });
+        pdf.addImage(cache.get(l.payload)!, "PNG", qrX, y + 4.1, qr, qr);
+
+        // Nombre, descripcion, variantes y precio con una jerarquia clara bajo el QR.
+        let ty = y + qr + 6;
+        pdf.setTextColor("#0B2533");
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(size === "chica" ? 4.8 : 5.4);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(size === "chica" ? 5 : 6);
         const nameLines = (pdf.splitTextToSize(l.name, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
-        let ty = y + qr + 7.5;
         for (const line of nameLines) {
           pdf.text(line, cx, ty, { align: "center" });
-          ty += size === "chica" ? 2.6 : 3;
+          ty += size === "chica" ? 2.3 : 2.8;
         }
         if (l.description) {
           pdf.setTextColor("#425466");
-          pdf.setFontSize(size === "chica" ? 4 : 4.6);
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(size === "chica" ? 3.8 : 4.5);
           const descriptionLines = (pdf.splitTextToSize(l.description, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
           for (const line of descriptionLines) {
             pdf.text(line, cx, ty, { align: "center" });
-            ty += size === "chica" ? 2 : 2.4;
+            ty += size === "chica" ? 1.8 : 2.2;
           }
         }
-        const variantLines = (pdf.splitTextToSize(l.variant || l.category, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
-        pdf.setTextColor("#425466");
-        pdf.setFontSize(size === "chica" ? 3.8 : 4.4);
-        for (const line of variantLines) {
-          pdf.text(line, cx, ty, { align: "center" });
-          ty += 2.2;
+        if (l.variant) {
+          const variantLines = (pdf.splitTextToSize(l.variant, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
+          pdf.setTextColor("#425466");
+          pdf.setFontSize(size === "chica" ? 3.7 : 4.3);
+          for (const line of variantLines) {
+            pdf.text(line, cx, ty, { align: "center" });
+            ty += size === "chica" ? 1.8 : 2.1;
+          }
         }
         pdf.setTextColor("#0B2533");
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(size === "chica" ? 4.6 : 5.2);
+        pdf.setFontSize(size === "chica" ? 5.4 : 6.8);
+        ty += 0.3;
         pdf.text(l.price, cx, ty, { align: "center" });
       });
       if (mode === "print") {
