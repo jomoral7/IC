@@ -1380,11 +1380,7 @@ function ProductDrawer({
             <ColorPickerField value={form.color ?? ""} onChange={(v) => set("color", v)} options={colorOptions} />
             <label>
               Departamento
-              <select value={form.gender ?? ""} onChange={(event) => set("gender", event.target.value)}>
-                {GENDERS.map((g) => (
-                  <option key={g}>{g}</option>
-                ))}
-              </select>
+              <Combobox value={form.gender ?? ""} onChange={(value) => set("gender", value)} options={[...GENDERS]} placeholder="Elige o escribe un departamento" />
             </label>
             <label>
               Temporada
@@ -1903,11 +1899,7 @@ function MatrixModal({
             </label>
             <label>
               Departamento
-              <select value={base.gender} onChange={(e) => setBase({ ...base, gender: e.target.value })}>
-                {GENDERS.map((g) => (
-                  <option key={g}>{g}</option>
-                ))}
-              </select>
+              <Combobox value={base.gender} onChange={(gender) => setBase({ ...base, gender })} options={[...GENDERS]} placeholder="Elige o escribe un departamento" />
             </label>
             <label>
               Proveedor
