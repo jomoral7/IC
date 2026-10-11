@@ -269,7 +269,7 @@ export type StockRequest = {
 };
 
 /** Segmento comercial de la prenda; se muestra como Departamento en la aplicación. */
-export const GENDERS = ["Unisex", "Mujer", "Hombre", "Niña", "Niño", "Bebé"] as const;
+export const GENDERS = ["Unisex", "Infantil unisex", "Mujer", "Hombre", "Niña", "Niño", "Bebé"] as const;
 
 /** Catalogos precargados. Se fusionan con los valores ya existentes en los productos. */
 export const CATEGORY_OPTIONS = [
