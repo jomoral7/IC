@@ -10,9 +10,9 @@ type SizeKey = "mediana" | "chica" | "grande";
 
 // Presets en mm para hoja carta (215.9 x 279.4).
 const PRESETS: Record<SizeKey, { label: string; qr: number; cellW: number; cellH: number }> = {
-  chica: { label: "Chica (~20mm)", qr: 20, cellW: 27, cellH: 30 },
-  mediana: { label: "Mediana (~28mm)", qr: 28, cellW: 39, cellH: 42 },
-  grande: { label: "Grande (~38mm)", qr: 38, cellW: 48, cellH: 54 },
+  chica: { label: "Chica (~20mm)", qr: 20, cellW: 27, cellH: 35 },
+  mediana: { label: "Mediana (~28mm)", qr: 28, cellW: 39, cellH: 50 },
+  grande: { label: "Grande (~38mm)", qr: 38, cellW: 48, cellH: 62 },
 };
 
 const PAGE_W = 215.9;
@@ -26,10 +26,6 @@ function gridOf(size: SizeKey) {
   return { cols, rows, perPage: cols * rows };
 }
 
-function productVariant(product: Product): string {
-  return [product.brand, product.size, product.color, product.gender].filter(Boolean).join(" · ");
-}
-
 function isPersonalCare(product: Product): boolean {
   return (product.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("cuidado personal");
 }
@@ -40,7 +36,11 @@ function labelInfo(product: Product) {
     code: product.internal_code || product.sku,
     name: product.name,
     category: product.category || "",
-    variant: productVariant(product),
+    description: product.description || "",
+    price: lps(product.sale_price),
+    variant: [product.brand, ...(isPersonalCare(product) ? [] : [product.size]), product.color, product.gender]
+      .filter(Boolean)
+      .join(" · "),
   };
 }
 
@@ -80,7 +80,7 @@ export function Labels({ products }: { products: Product[] }) {
 
   // Expande la seleccion por cantidad y genera los QR (cache por payload).
   async function buildLabels() {
-    const labels: { payload: string; code: string; name: string; category: string; variant: string }[] = [];
+    const labels: { payload: string; code: string; name: string; category: string; description: string; price: string; variant: string }[] = [];
     for (const [id, qty] of selected) {
       const p = products.find((x) => x.id === id);
       if (!p) continue;
@@ -109,7 +109,9 @@ export function Labels({ products }: { products: Product[] }) {
             <img src="${cache.get(l.payload)}" />
             <div class="code">${esc(l.code)}</div>
             <div class="name">${esc(l.name)}</div>
+            ${l.description ? `<div class="description">${esc(l.description)}</div>` : ""}
             <div class="variant">${esc(l.variant || l.category)}</div>
+            <div class="price">${esc(l.price)}</div>
           </div>`,
         )
         .join("");
@@ -124,7 +126,8 @@ export function Labels({ products }: { products: Product[] }) {
           .cell img { width: ${qr}mm; height: ${qr}mm; }
           .code { font-weight: bold; font-size: 8pt; margin-top: .8mm; }
           .name { font-weight: bold; font-size: 5.8pt; line-height: 1.05; max-height: 5.8mm; overflow: hidden; padding: 0 1mm; }
-          .variant { font-size: 5.2pt; line-height: 1.05; max-height: 5.6mm; overflow: hidden; color: #425466; padding: 0 1mm; }
+          .description, .variant { font-size: 4.8pt; line-height: 1.05; max-height: 4.5mm; overflow: hidden; color: #425466; padding: 0 1mm; }
+          .price { font-weight: bold; font-size: 5.4pt; line-height: 1.05; margin-top: .3mm; }
         </style></head>
         <body><div class="sheet">${cells}</div></body></html>`;
 
@@ -161,7 +164,7 @@ export function Labels({ products }: { products: Product[] }) {
     setGenerating(true);
     try {
       // Expandir por cantidad.
-      const labels: { payload: string; code: string; name: string; category: string; variant: string }[] = [];
+      const labels: { payload: string; code: string; name: string; category: string; description: string; price: string; variant: string }[] = [];
       for (const [id, qty] of selected) {
         const p = products.find((x) => x.id === id);
         if (!p) continue;
@@ -196,7 +199,7 @@ export function Labels({ products }: { products: Product[] }) {
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(7);
         pdf.text(l.code, cx, y + qr + 3.5, { align: "center" });
-        // Nombre y variante: se acomodan compactos para que la etiqueta identifique talla/color.
+        // Datos del producto en formato compacto para conservar legibilidad en la etiqueta.
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(size === "chica" ? 4.8 : 5.4);
         const nameLines = (pdf.splitTextToSize(l.name, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
@@ -205,13 +208,26 @@ export function Labels({ products }: { products: Product[] }) {
           pdf.text(line, cx, ty, { align: "center" });
           ty += size === "chica" ? 2.6 : 3;
         }
+        if (l.description) {
+          pdf.setTextColor("#425466");
+          pdf.setFontSize(size === "chica" ? 4 : 4.6);
+          const descriptionLines = (pdf.splitTextToSize(l.description, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
+          for (const line of descriptionLines) {
+            pdf.text(line, cx, ty, { align: "center" });
+            ty += size === "chica" ? 2 : 2.4;
+          }
+        }
         const variantLines = (pdf.splitTextToSize(l.variant || l.category, cellW - 3) as string[]).slice(0, size === "chica" ? 1 : 2);
         pdf.setTextColor("#425466");
-        pdf.setFontSize(size === "chica" ? 4.2 : 4.8);
+        pdf.setFontSize(size === "chica" ? 3.8 : 4.4);
         for (const line of variantLines) {
           pdf.text(line, cx, ty, { align: "center" });
-          ty += 2.5;
+          ty += 2.2;
         }
+        pdf.setTextColor("#0B2533");
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(size === "chica" ? 4.6 : 5.2);
+        pdf.text(l.price, cx, ty, { align: "center" });
       });
       if (mode === "print") {
         // Abre el visor con el dialogo de impresion listo.
