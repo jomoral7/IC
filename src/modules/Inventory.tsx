@@ -374,6 +374,8 @@ export function Inventory({
     () => Array.from(new Set(products.map((p) => p.brand || "Sin marca"))).sort((a, b) => a.localeCompare(b)),
     [products],
   );
+  const hideSizeColumn = categoryFilter !== "__all__" && categoryFilter
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("cuidado personal");
 
   const units = products.reduce((sum, product) => sum + product.stock, 0);
   const lowCount = products.filter((p) => stockState(p.stock, p.min_stock) !== "ok").length;
@@ -539,7 +541,7 @@ export function Inventory({
                   <th>Departamento</th>
                   <th>Categoria</th>
                   <th>Marca</th>
-                  <th>Talla</th>
+                  {!hideSizeColumn && <th>Talla</th>}
                   <th>Color</th>
                   <th>Descripción</th>
                   <th className="num">Cantidad</th>
@@ -556,6 +558,7 @@ export function Inventory({
                         <ProductRow
                           key={g.items[0].id}
                           product={g.items[0]}
+                          hideSize={hideSizeColumn}
                           onEdit={() => setEditing(g.items[0])}
                           onAdjust={() => setAdjusting(g.items[0])}
                           onPedido={() => setPedido({ product: g.items[0] })}
@@ -563,12 +566,13 @@ export function Inventory({
                         />
                       ) : (
                         <Fragment key={g.key}>
-                          <GroupRow group={g} open={expanded.has(g.key)} onToggle={() => toggleGroup(g.key)} />
+                          <GroupRow group={g} open={expanded.has(g.key)} hideSize={hideSizeColumn} onToggle={() => toggleGroup(g.key)} />
                           {expanded.has(g.key) &&
                             g.items.map((product) => (
                               <ProductRow
                                 key={product.id}
                                 product={product}
+                                hideSize={hideSizeColumn}
                                 indent
                                 onEdit={() => setEditing(product)}
                                 onAdjust={() => setAdjusting(product)}
@@ -583,6 +587,7 @@ export function Inventory({
                       <ProductRow
                         key={product.id}
                         product={product}
+                        hideSize={hideSizeColumn}
                         onEdit={() => setEditing(product)}
                         onAdjust={() => setAdjusting(product)}
                         onPedido={() => setPedido({ product })}
@@ -747,10 +752,12 @@ export function Inventory({
 function GroupRow({
   group,
   open,
+  hideSize = false,
   onToggle,
 }: {
   group: { key: string; name: string; brand: string | null; category: string; items: Product[] };
   open: boolean;
+  hideSize?: boolean;
   onToggle: () => void;
 }) {
   const totalStock = group.items.reduce((s, p) => s + p.stock, 0);
@@ -773,7 +780,7 @@ function GroupRow({
         <strong className="inv-cat category-pill">{group.category || "Sin categoria"}</strong>
       </td>
       <td>{group.brand || "Sin marca"}</td>
-      <td className="muted">Variantes</td>
+      {!hideSize && <td className="muted">Variantes</td>}
       <td className="muted">—</td>
       <td className="inv-description-cell">
         <strong>
@@ -806,6 +813,7 @@ function GroupRow({
 function ProductRow({
   product,
   indent = false,
+  hideSize = false,
   onEdit,
   onAdjust,
   onPedido,
@@ -813,6 +821,7 @@ function ProductRow({
 }: {
   product: Product;
   indent?: boolean;
+  hideSize?: boolean;
   onEdit: () => void;
   onAdjust: () => void;
   onPedido: () => void;
@@ -828,7 +837,7 @@ function ProductRow({
         <strong className="inv-cat category-pill">{product.category || "Sin categoria"}</strong>
       </td>
       <td>{product.brand || "Sin marca"}</td>
-      <td>{product.size || "—"}</td>
+      {!hideSize && <td>{product.size || "—"}</td>}
       <td>
         {product.color ? (
           <span className="inv-color-value"><span className="color-dot" style={{ background: colorHex(product.color) }} />{product.color}</span>

@@ -5476,6 +5476,19 @@ td:last-child {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.labels-stock-price {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+.labels-stock-price strong {
+  display: inline;
+  color: var(--navy);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 .labels-size {
   display: flex;
   flex-direction: column;

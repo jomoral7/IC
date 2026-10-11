@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import type { Product } from "../types";
+import { lps } from "../lib/format";
 import { EmptyWork } from "../ui";
 
 type SizeKey = "mediana" | "chica" | "grande";
@@ -29,6 +30,10 @@ function productVariant(product: Product): string {
   return [product.brand, product.size, product.color, product.gender].filter(Boolean).join(" · ");
 }
 
+function isPersonalCare(product: Product): boolean {
+  return (product.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("cuidado personal");
+}
+
 function labelInfo(product: Product) {
   return {
     payload: product.qr_payload || product.internal_code || product.sku,
@@ -49,7 +54,7 @@ export function Labels({ products }: { products: Product[] }) {
     const q = query.trim().toLowerCase();
     if (!q) return products;
     return products.filter((p) =>
-      [p.name, p.internal_code, p.sku, p.barcode, p.brand, p.category, p.size, p.color, p.gender]
+      [p.name, p.description, p.internal_code, p.sku, p.barcode, p.brand, p.category, p.size, p.color, p.gender]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -248,8 +253,10 @@ export function Labels({ products }: { products: Product[] }) {
                   <strong>{p.name}</strong>
                   <span className="labels-code">{p.internal_code ?? p.sku}</span>
                   <span className="labels-meta">
-                    {[p.category, p.brand, p.size, p.color, p.gender].filter(Boolean).join(" · ") || "Sin variante"}
+                    {[p.category, p.brand, ...(isPersonalCare(p) ? [] : [p.size]), p.color, p.gender].filter(Boolean).join(" · ") || "Sin variante"}
                   </span>
+                  {p.description && <span className="labels-meta">{p.description}</span>}
+                  <span className="labels-stock-price"><span>Disponible: <strong>{p.stock}</strong></span><strong>{lps(p.sale_price)}</strong></span>
                 </div>
                 <Plus size={16} />
               </button>
