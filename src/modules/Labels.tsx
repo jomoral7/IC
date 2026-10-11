@@ -30,13 +30,25 @@ function isPersonalCare(product: Product): boolean {
   return (product.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("cuidado personal");
 }
 
+function labelDescription(product: Product): string {
+  const description = (product.description || "").trim();
+  if (!isPersonalCare(product) || !description) return description;
+
+  const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (normalize(description) === normalize(product.name)) return "";
+
+  const escapedName = product.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const namePrefix = new RegExp(`^${escapedName}(?:\\s*[:·|,-]\\s*|\\s+)`, "i");
+  return description.replace(namePrefix, "").trim();
+}
+
 function labelInfo(product: Product) {
   return {
     payload: product.qr_payload || product.internal_code || product.sku,
     code: product.internal_code || product.sku,
     name: product.name,
     category: product.category || "",
-    description: product.description || "",
+    description: labelDescription(product),
     price: lps(product.sale_price),
     variant: [product.brand, ...(isPersonalCare(product) ? [] : [product.size]), product.color, ...(isPersonalCare(product) ? [] : [product.gender])]
       .filter(Boolean)
@@ -271,7 +283,7 @@ export function Labels({ products }: { products: Product[] }) {
                   <span className="labels-meta">
                     {[p.category, p.brand, ...(isPersonalCare(p) ? [] : [p.size]), p.color, ...(isPersonalCare(p) ? [] : [p.gender])].filter(Boolean).join(" · ") || "Sin variante"}
                   </span>
-                  {p.description && <span className="labels-meta">{p.description}</span>}
+                  {labelDescription(p) && <span className="labels-meta">{labelDescription(p)}</span>}
                   <span className="labels-stock-price"><span>Disponible: <strong>{p.stock}</strong></span><strong>{lps(p.sale_price)}</strong></span>
                 </div>
                 <Plus size={16} />
