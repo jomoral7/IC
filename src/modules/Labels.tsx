@@ -38,7 +38,7 @@ function labelInfo(product: Product) {
     category: product.category || "",
     description: product.description || "",
     price: lps(product.sale_price),
-    variant: [product.brand, ...(isPersonalCare(product) ? [] : [product.size]), product.color, product.gender]
+    variant: [product.brand, ...(isPersonalCare(product) ? [] : [product.size]), product.color, ...(isPersonalCare(product) ? [] : [product.gender])]
       .filter(Boolean)
       .join(" · "),
   };
@@ -269,7 +269,7 @@ export function Labels({ products }: { products: Product[] }) {
                   <strong>{p.name}</strong>
                   <span className="labels-code">{p.internal_code ?? p.sku}</span>
                   <span className="labels-meta">
-                    {[p.category, p.brand, ...(isPersonalCare(p) ? [] : [p.size]), p.color, p.gender].filter(Boolean).join(" · ") || "Sin variante"}
+                    {[p.category, p.brand, ...(isPersonalCare(p) ? [] : [p.size]), p.color, ...(isPersonalCare(p) ? [] : [p.gender])].filter(Boolean).join(" · ") || "Sin variante"}
                   </span>
                   {p.description && <span className="labels-meta">{p.description}</span>}
                   <span className="labels-stock-price"><span>Disponible: <strong>{p.stock}</strong></span><strong>{lps(p.sale_price)}</strong></span>
@@ -312,7 +312,7 @@ export function Labels({ products }: { products: Product[] }) {
                   <div className="labels-sel-info">
                     <strong>{p.name}</strong>
                     <span className="labels-code">{p.internal_code ?? p.sku}</span>
-                    <span className="labels-meta">{[p.brand, p.size, p.color].filter(Boolean).join(" · ") || p.category}</span>
+                    <span className="labels-meta">{[p.brand, ...(isPersonalCare(p) ? [] : [p.size]), p.color, ...(isPersonalCare(p) ? [] : [p.gender])].filter(Boolean).join(" · ") || p.category}</span>
                   </div>
                   <div className="qty-stepper">
                     <button onClick={() => setQty(id, qty - 1)} aria-label="Menos">
