@@ -814,7 +814,7 @@ function EstadoResultados({ journal }: { journal: JournalEntryFull[] }) {
 
   const totals = useMemo(() => accountTotals(journal, from, to), [journal, from, to]);
   const income = totals.filter((a) => a.type === "income").map((a) => ({ ...a, val: a.credit - a.debit }));
-  const expense = totals.filter((a) => a.type === "expense").map((a) => ({ ...a, val: a.debit - a.credit }));
+  const expense = totals.filter((a) => a.type === "expense" && a.code !== "5211").map((a) => ({ ...a, val: a.debit - a.credit }));
   const totalIncome = income.reduce((s, a) => s + a.val, 0);
   const totalExpense = expense.reduce((s, a) => s + a.val, 0);
   const utilidad = totalIncome - totalExpense;
