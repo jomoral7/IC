@@ -1,4 +1,4 @@
-import { BadgePercent, Banknote, ChevronDown, CreditCard, Eye, FileText, Minus, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
+import { BadgePercent, Banknote, Check, ChevronDown, CreditCard, Eye, FileText, Minus, Pencil, Plus, ScanLine, Search, ShoppingCart, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CartLine, CashCollectionMethod, PackagingMaterial, PackagingUsage, Party, Product, Seller } from "../types";
 import { lps, stockState } from "../lib/format";
@@ -102,6 +102,7 @@ export function POS({
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [discountingId, setDiscountingId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
@@ -199,6 +200,9 @@ export function POS({
 
   function setQty(id: string, qty: number) {
     setCart(cart.map((item) => (item.id === id ? { ...item, qty: Math.max(1, Math.min(qty, item.stock)) } : item)));
+  }
+  function setPrice(id: string, price: number) {
+    setCart(cart.map((item) => (item.id === id ? { ...item, sale_price: Math.max(0, price), manual_discount_pct: 0, manual_discount_amount: 0 } : item)));
   }
   function setLineDiscount(id: string, pct: number) {
     setCart(cart.map((item) => item.id === id ? { ...item, manual_discount_mode: "percent", manual_discount_pct: Math.max(0, Math.min(100, pct)), manual_discount_amount: 0 } : item));
@@ -349,7 +353,31 @@ export function POS({
                     <Plus size={14} />
                   </button>
                 </div>
-                <div className="price-cell"><span className="price-fixed">{lps(line.sale_price)}</span></div>
+                <div className="price-cell">
+                  {lockSeller ? (
+                    <span className="price-fixed">{lps(line.sale_price)}</span>
+                  ) : editingId === line.id ? (
+                    <div className="price-edit-box">
+                      <input
+                        autoFocus
+                        type="number"
+                        min={0}
+                        value={line.sale_price}
+                        onChange={(e) => setPrice(line.id, Number(e.target.value))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setEditingId(null);
+                        }}
+                      />
+                      <button className="price-ok" title="Listo" onClick={() => setEditingId(null)}>
+                        <Check size={15} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="price-view" title="Editar precio de esta venta" onClick={() => setEditingId(line.id)}>
+                      {lps(line.sale_price)} <Pencil size={13} />
+                    </button>
+                  )}
+                </div>
                 {!lockSeller && (
                   <button className={`line-discount-button ${hasManualDiscount(line) ? "active" : ""}`} title="Descuento de esta prenda" aria-label={`Descuento de ${line.name}`} onClick={() => setDiscountingId(discountingId === line.id ? null : line.id)}>
                     <BadgePercent size={15} />

@@ -261,7 +261,12 @@ export function App() {
     const refreshedProductsById = new Map(refreshedProducts.map((product) => [product.id, product]));
     setCart((current) => current.map((line) => {
       const product = refreshedProductsById.get(line.id);
-      return product ? repriceCartLine(line, product) : line;
+      if (!product) return line;
+      const catalogPriceChanged = Math.abs(Number(line.base_price ?? line.sale_price) - Number(product.sale_price)) > 0.009;
+      const offerChanged = Number(line.discount_pct ?? 0) !== Number(product.discount_pct ?? 0);
+      return catalogPriceChanged || offerChanged
+        ? repriceCartLine(line, product)
+        : { ...line, ...product, qty: line.qty, base_price: line.base_price ?? Number(product.sale_price), sale_price: line.sale_price };
     }));
     const packagingByLocation = new Map<string, Record<string, number>>();
     const packagingTotals = new Map<string, number>();
@@ -1238,9 +1243,7 @@ export function App() {
       const product = currentPricesById.get(line.id) as any;
       const catalogPrice = Number(product.sale_price);
       const discount = Number(product.discount_pct ?? 0);
-      const finalPrice = effectiveProductSalePrice({ sale_price: catalogPrice, discount_pct: discount });
       return Math.abs(Number(line.base_price ?? line.sale_price) - catalogPrice) > 0.009 ||
-        Math.abs(Number(line.sale_price) - finalPrice) > 0.009 ||
         Number(line.discount_pct ?? 0) !== discount;
     });
     if (changedPriceLines.length > 0) {
