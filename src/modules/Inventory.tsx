@@ -464,36 +464,33 @@ export function Inventory({
             <div className="inv-facet-filters">
               <label className="inv-filter-select">
                 <span>Departamento</span>
-                <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
-                  <option value="__all__">Todos</option>
-                  {departmentOptions.map((department) => (
-                    <option key={department} value={department}>
-                      {department}
-                    </option>
-                  ))}
-                </select>
+                <Combobox
+                  value={departmentFilter === "__all__" ? "" : departmentFilter}
+                  onChange={(value) => setDepartmentFilter(value.trim() ? value : "__all__")}
+                  options={departmentOptions}
+                  placeholder="Todos"
+                />
+                {departmentFilter !== "__all__" && <button type="button" className="inv-filter-clear" aria-label="Mostrar todos los departamentos" title="Quitar filtro" onClick={() => setDepartmentFilter("__all__")}><X size={14} /></button>}
               </label>
               <label className="inv-filter-select">
                 <span>Categoria</span>
-                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-                  <option value="__all__">Todas</option>
-                  {categoryOptions.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
+                <Combobox
+                  value={categoryFilter === "__all__" ? "" : categoryFilter}
+                  onChange={(value) => setCategoryFilter(value.trim() ? value : "__all__")}
+                  options={categoryOptions}
+                  placeholder="Todas"
+                />
+                {categoryFilter !== "__all__" && <button type="button" className="inv-filter-clear" aria-label="Mostrar todas las categorías" title="Quitar filtro" onClick={() => setCategoryFilter("__all__")}><X size={14} /></button>}
               </label>
               <label className="inv-filter-select">
                 <span>Marca</span>
-                <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}>
-                  <option value="__all__">Todas</option>
-                  {brandOptions.map((brand) => (
-                    <option key={brand} value={brand}>
-                      {brand}
-                    </option>
-                  ))}
-                </select>
+                <Combobox
+                  value={brandFilter === "__all__" ? "" : brandFilter}
+                  onChange={(value) => setBrandFilter(value.trim() ? value : "__all__")}
+                  options={brandOptions}
+                  placeholder="Todas"
+                />
+                {brandFilter !== "__all__" && <button type="button" className="inv-filter-clear" aria-label="Mostrar todas las marcas" title="Quitar filtro" onClick={() => setBrandFilter("__all__")}><X size={14} /></button>}
               </label>
             </div>
           )}

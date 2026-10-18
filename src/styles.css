@@ -2049,6 +2049,35 @@ td:last-child {
   gap: 6px;
   white-space: nowrap;
 }
+.inv-filter-select .combobox {
+  flex: 1;
+  min-width: 170px;
+}
+.inv-filter-select .combobox > input {
+  min-width: 0;
+  padding: 4px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--navy);
+  font-weight: 700;
+}
+.inv-filter-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.inv-filter-clear:hover {
+  background: var(--paper);
+  color: var(--navy);
+}
 .inv-filter-select select {
   min-width: 170px;
   border: none;
@@ -6431,9 +6460,13 @@ td:last-child {
     padding: 8px 10px;
   }
 
-  .inv-filter-select select {
+  .inv-filter-select .combobox {
     width: 100%;
     min-width: 0;
+  }
+
+  .inv-filter-select .combobox > input {
+    width: 100%;
   }
 
   .inv-filters,
