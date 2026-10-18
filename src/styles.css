@@ -1885,6 +1885,60 @@ td:last-child {
   gap: 12px;
   margin-bottom: 18px;
 }
+.inv-view-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.inv-view-switch button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.inv-view-switch button.active {
+  color: var(--navy);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(11 37 51 / 12%);
+}
+.inventory-summary-view { display: grid; gap: 14px; }
+.inventory-summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.inventory-summary-heading h3 { margin: 0; color: var(--navy); font-size: 17px; }
+.inventory-summary-heading p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.inventory-summary-totals { display: flex; flex-wrap: wrap; gap: 8px; }
+.inventory-summary-totals span {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.inventory-summary-totals strong { color: var(--navy); }
+.inventory-summary-table { min-width: 820px; }
+.inventory-model-row { background: #fff; }
+.inventory-model-row > td { vertical-align: middle; }
+.inventory-variant-detail > td { padding: 0 !important; background: #f6f8fb; }
+.inventory-variant-table-wrap { padding: 10px 16px 14px; overflow-x: auto; }
+.inventory-variant-table { width: 100%; min-width: 700px; border-collapse: collapse; font-size: 13px; }
+.inventory-variant-table th,
+.inventory-variant-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+.inventory-variant-table th { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.inventory-variant-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .inv-search {
   display: flex;
   align-items: center;
@@ -6384,6 +6438,7 @@ td:last-child {
 
   .inv-filters,
   .inv-date-sort,
+  .inv-view-switch,
   .filterbar,
   .tab-row,
   .seller-tabs,
@@ -6397,6 +6452,7 @@ td:last-child {
 
   .inv-filters button,
   .inv-date-sort button,
+  .inv-view-switch button,
   .filterbar button,
   .tab-row button,
   .seller-tabs button,
@@ -6582,6 +6638,9 @@ td:last-child {
     width: 100%;
     min-width: 1180px;
   }
+
+  .inventory-summary-table { min-width: 820px; }
+  .inventory-summary-heading { align-items: flex-start; flex-direction: column; }
 
   .inv-table thead th,
   .diario-table th,

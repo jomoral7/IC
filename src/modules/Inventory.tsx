@@ -280,6 +280,7 @@ export function Inventory({
   const [categoryFilter, setCategoryFilter] = useState("__all__");
   const [brandFilter, setBrandFilter] = useState("__all__");
   const [groupVariants, setGroupVariants] = useState(false);
+  const [inventoryView, setInventoryView] = useState<"products" | "summary">("products");
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<{ supplierId: string; lines: PurchaseLine[]; requestId: string | null; isBox?: boolean } | null>(null);
@@ -414,10 +415,18 @@ export function Inventory({
             <input
               value={localQuery}
               onChange={(event) => setLocalQuery(event.target.value)}
-              placeholder="Buscar por producto, detalle, código, marca, talla o color"
+              placeholder={inventoryView === "summary" ? "Buscar modelo, marca, categoría, talla o color" : "Buscar por producto, detalle, código, marca, talla o color"}
             />
           </div>
-          <div className="inv-filters">
+          <div className="inv-view-switch" role="tablist" aria-label="Vista del inventario">
+            <button type="button" role="tab" aria-selected={inventoryView === "products"} className={inventoryView === "products" ? "active" : ""} onClick={() => setInventoryView("products")}>
+              Productos
+            </button>
+            <button type="button" role="tab" aria-selected={inventoryView === "summary"} className={inventoryView === "summary" ? "active" : ""} onClick={() => setInventoryView("summary")}>
+              Resumen por modelo
+            </button>
+          </div>
+          {inventoryView === "products" && <div className="inv-filters">
             <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>
               Todos
             </button>
@@ -427,8 +436,8 @@ export function Inventory({
             <button className={filter === "orders" ? "active" : ""} onClick={() => setFilter("orders")}>
               <Truck size={15} /> Pedidos{stockRequests.length ? ` (${stockRequests.length})` : ""}
             </button>
-          </div>
-          {filter !== "orders" && (
+          </div>}
+          {inventoryView === "products" && filter !== "orders" && (
             <div className="inv-date-sort" role="group" aria-label="Ordenar inventario por fecha de ingreso">
               <span>Fecha</span>
               <button
@@ -451,7 +460,7 @@ export function Inventory({
               </button>
             </div>
           )}
-          {filter !== "orders" && (
+          {(inventoryView === "summary" || filter !== "orders") && (
             <div className="inv-facet-filters">
               <label className="inv-filter-select">
                 <span>Departamento</span>
@@ -488,13 +497,13 @@ export function Inventory({
               </label>
             </div>
           )}
-          {filter !== "orders" && (
+          {inventoryView === "products" && filter !== "orders" && (
             <label className="inv-switch">
               <input type="checkbox" checked={groupVariants} onChange={(event) => setGroupVariants(event.target.checked)} />
               <span>Agrupar variantes</span>
             </label>
           )}
-          <div className="inv-actions">
+          {inventoryView === "products" && <div className="inv-actions">
             <button className="secondary-button" onClick={() => setScanning(true)}>
               <ScanLine size={16} /> Escanear
             </button>
@@ -510,10 +519,12 @@ export function Inventory({
             <button className="primary-button" onClick={() => setCreating(true)}>
               <Plus size={16} /> Nuevo producto
             </button>
-          </div>
+          </div>}
         </div>
 
-        {filter === "orders" ? (
+        {inventoryView === "summary" ? (
+          <InventorySummaryView products={filteredByFacets} />
+        ) : filter === "orders" ? (
           <OrdersView
             requests={stockRequests}
             products={products}
@@ -1056,6 +1067,128 @@ function PedidoModal({
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function InventorySummaryView({ products }: { products: Product[] }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const groups = useMemo(() => {
+    const normalize = (value: string | null | undefined) => (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase();
+    const map = new Map<string, { key: string; name: string; brand: string | null; category: string; items: Product[] }>();
+    for (const product of products) {
+      const name = product.name.trim() || "Sin nombre";
+      const brand = product.brand?.trim() || null;
+      const category = product.category?.trim() || "Sin categoría";
+      const key = [brand, category, name].map(normalize).join("|");
+      const group = map.get(key) ?? { key, name, brand, category, items: [] };
+      group.items.push(product);
+      map.set(key, group);
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      (a.brand ?? "").localeCompare(b.brand ?? "", "es", { sensitivity: "base" }) ||
+      a.category.localeCompare(b.category, "es", { sensitivity: "base" }) ||
+      a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
+    );
+  }, [products]);
+  const totalUnits = products.reduce((sum, product) => sum + product.stock, 0);
+  const toggle = (key: string) => setExpanded((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+
+  if (groups.length === 0) {
+    return <EmptyWork title="No hay modelos para mostrar" text="Cambia la búsqueda o los filtros para ver existencias agrupadas por marca y modelo." />;
+  }
+
+  return (
+    <div className="inventory-summary-view">
+      <div className="inventory-summary-heading">
+        <div>
+          <h3>Existencias por modelo</h3>
+          <p>Agrupado por marca, categoría y nombre. Abre un modelo para ver cada talla y color.</p>
+        </div>
+        <div className="inventory-summary-totals" aria-live="polite">
+          <span><strong>{groups.length}</strong> modelos</span>
+          <span><strong>{products.length}</strong> variantes</span>
+          <span><strong>{totalUnits}</strong> unidades</span>
+        </div>
+      </div>
+      <div className="inv-table-wrap">
+        <table className="inv-table inventory-summary-table">
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th>Marca</th>
+              <th>Categoría</th>
+              <th className="num">Variantes</th>
+              <th className="num">Unidades</th>
+              <th className="actions-col">Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((group) => {
+              const isOpen = expanded.has(group.key);
+              const stock = group.items.reduce((sum, product) => sum + product.stock, 0);
+              const incoming = group.items.reduce((sum, product) => sum + product.incoming, 0);
+              const variantsWithStock = group.items.filter((product) => product.stock > 0).length;
+              const variants = [...group.items].sort((a, b) =>
+                (a.color ?? "").localeCompare(b.color ?? "", "es", { sensitivity: "base" }) ||
+                (a.size ?? "").localeCompare(b.size ?? "", "es", { numeric: true, sensitivity: "base" }) ||
+                (a.internal_code ?? a.sku).localeCompare(b.internal_code ?? b.sku, "es", { numeric: true }),
+              );
+              return (
+                <Fragment key={group.key}>
+                  <tr className="inventory-model-row">
+                    <td><strong>{group.name}</strong></td>
+                    <td>{group.brand ?? "Sin marca"}</td>
+                    <td>{group.category}</td>
+                    <td className="num">{group.items.length}<span className="inv-code">{variantsWithStock} con stock</span></td>
+                    <td className="num"><strong>{stock}</strong>{incoming > 0 && <span className="incoming-tag">+{incoming} en camino</span>}</td>
+                    <td className="actions-col">
+                      <button type="button" className="mini-button" aria-expanded={isOpen} onClick={() => toggle(group.key)}>
+                        {isOpen ? "Ocultar" : "Ver variantes"}
+                      </button>
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="inventory-variant-detail">
+                      <td colSpan={6}>
+                        <div className="inventory-variant-table-wrap">
+                          <table className="inventory-variant-table">
+                            <thead>
+                              <tr><th>Color</th><th>Talla</th><th>Código</th><th className="num">En stock</th><th className="num">En camino</th><th className="num">Precio de venta</th></tr>
+                            </thead>
+                            <tbody>
+                              {variants.map((product) => (
+                                <tr key={product.id}>
+                                  <td>{product.color || "Sin color"}</td>
+                                  <td>{product.size || "—"}</td>
+                                  <td>{product.internal_code ?? product.sku}</td>
+                                  <td className="num">{product.stock}</td>
+                                  <td className="num">{product.incoming}</td>
+                                  <td className="num">{lps(product.discount_pct > 0 ? product.price_final : product.sale_price)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
