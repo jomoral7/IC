@@ -1901,7 +1901,7 @@ export function App() {
     await loadWorkspace();
   }
 
-  async function saveInvoiceEdit(doc: any, lines: InvoiceItem[]) {
+  async function saveInvoiceEdit(doc: any, lines: InvoiceItem[], ticketDiscountAmount: number) {
     if (!supabase) return;
     const location = await ensureLocation();
 
@@ -1937,20 +1937,34 @@ export function App() {
         quantity: l.qty,
         unit_cost: products.find((p) => p.id === l.product_id)?.real_cost ?? 0,
         unit_price: l.unit_price,
+        unit_price_original: Number(l.original_price ?? l.unit_price),
+        discount: Number((Math.max(0, Number(l.original_price ?? l.unit_price) - l.unit_price) * l.qty).toFixed(2)),
         line_total: l.qty * l.unit_price,
       })),
     );
 
     const subtotal = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
+    const ticketDiscount = Math.min(subtotal, Math.max(0, Number(ticketDiscountAmount ?? 0)));
+    const taxable = Math.max(0, subtotal - ticketDiscount);
+    const taxRate = Number(doc.tax ?? 0) > 0 ? 0.15 : 0;
+    const nextTax = Number((taxable * taxRate).toFixed(2));
+    const nextTotal = Number((taxable + nextTax).toFixed(2));
     await supabase
       .from("documents")
-      .update({ subtotal, total: subtotal, paid_amount: doc.payment_terms === "cash" ? subtotal : doc.paid_amount })
+      .update({ subtotal, discount: ticketDiscount, tax: nextTax, total: nextTotal, paid_amount: doc.payment_terms === "cash" ? nextTotal : doc.paid_amount })
       .eq("id", doc.id);
 
-    // Asiento de AJUSTE por la edicion: solo la diferencia (nuevo - viejo).
-    const oldTaxable = Number(doc.subtotal ?? doc.total) - Number(doc.discount ?? 0);
+    // Ajustar venta bruta, descuentos, cobro, impuesto e inventario conservando el detalle original.
+    const oldSubtotal = Number(doc.subtotal ?? doc.total);
+    const oldTicketDiscount = Math.max(0, Number(doc.discount ?? 0));
     const oldTax = Number(doc.tax ?? 0);
     const oldTotal = Number(doc.total);
+    const oldItemDiscount = detailItems.reduce((sum, item) => sum + Number(item.discount ?? Math.max(0, Number(item.original_price ?? item.unit_price) - item.unit_price) * item.qty), 0);
+    const newItemDiscount = lines.reduce((sum, item) => sum + Math.max(0, Number(item.original_price ?? item.unit_price) - item.unit_price) * item.qty, 0);
+    const oldGrossSales = oldSubtotal + oldItemDiscount;
+    const newGrossSales = subtotal + newItemDiscount;
+    const oldTotalDiscounts = oldItemDiscount + oldTicketDiscount;
+    const newTotalDiscounts = newItemDiscount + ticketDiscount;
     const oldCost = detailItems.reduce(
       (s, it) => s + it.qty * Number(products.find((p) => p.id === it.product_id)?.real_cost ?? 0),
       0,
@@ -1959,16 +1973,18 @@ export function App() {
       (s, l) => s + l.qty * Number(products.find((p) => p.id === l.product_id)?.real_cost ?? 0),
       0,
     );
-    const dTotal = subtotal - oldTotal; // el edit deja total = subtotal (sin ISV/descuento)
-    const dTaxable = subtotal - oldTaxable;
-    const dTax = 0 - oldTax;
+    const dTotal = nextTotal - oldTotal;
+    const dGrossSales = newGrossSales - oldGrossSales;
+    const dDiscounts = newTotalDiscounts - oldTotalDiscounts;
+    const dTax = nextTax - oldTax;
     const dCost = newCost - oldCost;
     const dbPos = (amt: number) => ({ debit: amt >= 0 ? amt : 0, credit: amt < 0 ? -amt : 0 }); // cuentas de saldo deudor
     const crPos = (amt: number) => ({ debit: amt < 0 ? -amt : 0, credit: amt >= 0 ? amt : 0 }); // cuentas de saldo acreedor
     const editAsset = await saleAssetAccount(doc.id, doc.payment_terms === "credit" ? "credit" : "cash");
     await postJournal(new Date().toISOString().slice(0, 10), `Ajuste edicion factura ${doc.document_number}`, "sale", doc.id, [
       { account_id: editAsset, ...dbPos(dTotal), description: "Ajuste cobro" },
-      { account_id: accountIdByKey("sales"), ...crPos(dTaxable), description: "Ajuste ventas" },
+      { account_id: accountIdByKey("sales"), ...crPos(dGrossSales), description: "Ajuste ventas brutas" },
+      { account_id: accountIdByKey("sales_discounts"), ...dbPos(dDiscounts), description: "Ajuste descuentos y promociones" },
       { account_id: accountIdByKey("tax_payable"), ...crPos(dTax), description: "Ajuste ISV" },
       { account_id: accountIdByKey("cogs"), ...dbPos(dCost), description: "Ajuste costo" },
       { account_id: accountIdByKey("inventory"), ...crPos(dCost), description: "Ajuste inventario" },
@@ -1979,11 +1995,11 @@ export function App() {
     if (comm) {
       await supabase
         .from("seller_commissions")
-        .update({ base_amount: subtotal, commission_amount: Number((subtotal * Number(comm.rate)).toFixed(2)) })
+        .update({ base_amount: taxable, commission_amount: Number((taxable * Number(comm.rate)).toFixed(2)) })
         .eq("id", comm.id);
     }
 
-    await logAudit("Editar factura", `Factura ${doc.document_number} · nuevo total L ${subtotal.toLocaleString("es-HN")}`);
+    await logAudit("Editar factura", `Factura ${doc.document_number} · nuevo total L ${nextTotal.toLocaleString("es-HN")}`);
     setNotice(`Factura ${doc.document_number} actualizada`);
     setDetailDoc(null);
     await loadWorkspace();

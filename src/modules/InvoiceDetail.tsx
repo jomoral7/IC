@@ -48,18 +48,22 @@ export function InvoiceDetailModal({
   onClose: () => void;
   onDownload: (doc: any) => Promise<void>;
   onVoid: (doc: any, reason: string) => Promise<void>;
-  onSaveEdit: (doc: any, lines: InvoiceItem[]) => Promise<void>;
+  onSaveEdit: (doc: any, lines: InvoiceItem[], ticketDiscount: number) => Promise<void>;
   /** Si es true (vendedor), solo puede ver e imprimir: sin editar ni anular. */
   readOnly?: boolean;
 }) {
   const voided = Boolean(doc.voided_at);
   const [mode, setMode] = useState<Mode>("view");
   const [lines, setLines] = useState<InvoiceItem[]>(items);
+  const [ticketDiscount, setTicketDiscount] = useState(Number(doc.discount ?? 0));
   const [reason, setReason] = useState("");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const editSubtotal = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const editTaxable = Math.max(0, editSubtotal - Math.min(editSubtotal, Math.max(0, ticketDiscount)));
+  const editTax = Number(doc.tax ?? 0) > 0 ? Number((editTaxable * 0.15).toFixed(2)) : 0;
+  const total = editTaxable + editTax;
   const viewTotal = items.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const itemDiscountTotal = items.reduce((sum, item) => sum + itemDiscount(item), 0);
 
@@ -75,15 +79,25 @@ export function InvoiceDetailModal({
   function addProduct(p: Product) {
     setLines((cur) => [
       ...cur,
-      { product_id: p.id, name: p.name, size: p.size, category: p.category, brand: p.brand, color: p.color, code: p.internal_code ?? p.sku, qty: 1, unit_price: p.sale_price, stock: p.stock },
+      { product_id: p.id, name: p.name, size: p.size, category: p.category, brand: p.brand, color: p.color, code: p.internal_code ?? p.sku, qty: 1, unit_price: p.sale_price, original_price: p.sale_price, discount: 0, stock: p.stock },
     ]);
     setQuery("");
   }
   function setQty(id: string, qty: number) {
-    setLines((cur) => cur.map((l) => (l.product_id === id ? { ...l, qty: Math.max(1, qty) } : l)));
+    setLines((cur) => cur.map((l) => {
+      if (l.product_id !== id) return l;
+      const nextQty = Math.max(1, qty);
+      return { ...l, qty: nextQty, discount: Number((Math.max(0, Number(l.original_price ?? l.unit_price) - l.unit_price) * nextQty).toFixed(2)) };
+    }));
   }
-  function setPrice(id: string, price: number) {
-    setLines((cur) => cur.map((l) => (l.product_id === id ? { ...l, unit_price: Math.max(0, price) } : l)));
+  function setDiscount(id: string, amount: number) {
+    setLines((cur) => cur.map((l) => {
+      if (l.product_id !== id) return l;
+      const original = Math.max(0, Number(l.original_price ?? l.unit_price));
+      const requestedDiscount = Math.max(0, Math.min(original * l.qty, amount));
+      const unitPrice = Number(Math.max(0, original - requestedDiscount / l.qty).toFixed(2));
+      return { ...l, unit_price: unitPrice, discount: Number((Math.max(0, original - unitPrice) * l.qty).toFixed(2)) };
+    }));
   }
   function removeLine(id: string) {
     setLines((cur) => cur.filter((l) => l.product_id !== id));
@@ -92,7 +106,7 @@ export function InvoiceDetailModal({
   async function saveEdit() {
     if (lines.length === 0 || busy) return;
     setBusy(true);
-    await onSaveEdit(doc, lines);
+    await onSaveEdit(doc, lines, ticketDiscount);
     setBusy(false);
     onClose();
   }
@@ -295,14 +309,20 @@ export function InvoiceDetailModal({
                       <span>{l.qty}</span>
                       <button aria-label={`Aumentar cantidad de ${l.name}`} onClick={() => setQty(l.product_id, l.qty + 1)}><Plus size={14} /></button>
                     </div>
-                    <input
-                      className="edit-price"
-                      aria-label={`Precio de ${l.name}`}
-                      type="number"
-                      min={0}
-                      value={l.unit_price}
-                      onChange={(e) => setPrice(l.product_id, Number(e.target.value))}
-                    />
+                    <label className="edit-discount-field">
+                      <span>Descuento (L)</span>
+                      <input
+                        className="edit-price"
+                        aria-label={`Descuento de ${l.name}`}
+                        type="number"
+                        min={0}
+                        max={Number(l.original_price ?? l.unit_price) * l.qty}
+                        step="0.01"
+                        value={itemDiscount(l)}
+                        onChange={(e) => setDiscount(l.product_id, Number(e.target.value))}
+                      />
+                      <small>Original {lps(Number(l.original_price ?? l.unit_price))} c/u · Final {lps(l.unit_price)} c/u</small>
+                    </label>
                     <b>{lps(l.qty * l.unit_price)}</b>
                     <button className="ticket-remove" aria-label={`Quitar ${l.name}`} onClick={() => removeLine(l.product_id)}><Trash2 size={15} /></button>
                   </div>
@@ -311,6 +331,10 @@ export function InvoiceDetailModal({
             </div>
 
             <div className="invoice-total-row">
+              <label className="invoice-edit-ticket-discount">
+                <span>Descuento general (L)</span>
+                <input type="number" min={0} max={editSubtotal} step="0.01" value={ticketDiscount} onChange={(event) => setTicketDiscount(Math.max(0, Math.min(editSubtotal, Number(event.target.value))))} />
+              </label>
               <span>Nuevo total</span>
               <strong>{lps(total)}</strong>
             </div>

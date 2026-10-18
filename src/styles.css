@@ -3931,6 +3931,22 @@ td:last-child {
   color: var(--navy);
   font-size: 18px;
 }
+.invoice-edit-ticket-discount {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.invoice-edit-ticket-discount input {
+  width: 108px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  text-align: right;
+  color: var(--navy);
+}
 .invoice-actions {
   display: flex;
   gap: 10px;
@@ -3996,6 +4012,20 @@ td:last-child {
   border: 1px solid var(--line);
   border-radius: 8px;
   text-align: right;
+}
+.edit-discount-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.edit-discount-field small {
+  font-size: 9px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 .edit-line b {
   color: var(--navy);
