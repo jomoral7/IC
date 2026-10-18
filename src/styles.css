@@ -4845,6 +4845,24 @@ td:last-child {
   flex-direction: column;
   gap: 14px;
 }
+.accounting-scroll-top {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: #fff;
+  background: var(--navy);
+  box-shadow: 0 4px 14px rgb(11 37 51 / 22%);
+}
+.accounting-scroll-top:hover { background: var(--ink); }
+.accounting-scroll-top:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 .diario-entry {
   border: 1px solid var(--line);
   border-radius: 12px;
