@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Account, AdjustmentDraft, Party, Product, ProductForm, PurchaseFunding, PurchaseLine, PurchaseSource } from "../types";
 import { ADJUSTMENT_REASONS, CATEGORY_OPTIONS, COLOR_OPTIONS, GENDERS, emptyProduct, sizesForCategory } from "../types";
 import { lps, shortDate, stockState, suggestedRestock } from "../lib/format";
@@ -1095,6 +1096,11 @@ function InventorySummaryView({ products }: { products: Product[] }) {
     );
   }, [products]);
   const totalUnits = products.reduce((sum, product) => sum + product.stock, 0);
+  const lowVariants = products.filter((product) => product.stock > 0 && product.stock <= product.min_stock).length;
+  const outVariants = products.filter((product) => product.stock <= 0).length;
+  const brandStock = useMemo(() => aggregateStock(products, (product) => product.brand?.trim() || "Sin marca"), [products]);
+  const categoryStock = useMemo(() => aggregateStock(products, (product) => product.category?.trim() || "Sin categoría"), [products]);
+  const categoryColors = ["#163b4d", "#1b8060", "#e3a32b", "#5a83a2", "#b96049", "#8a70a8", "#49a7a0", "#c67b28"];
   const toggle = (key: string) => setExpanded((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key);
@@ -1119,6 +1125,21 @@ function InventorySummaryView({ products }: { products: Product[] }) {
           <span><strong>{totalUnits}</strong> unidades</span>
         </div>
       </div>
+      <section className="inventory-insight-cards" aria-label="Resumen del inventario filtrado">
+        <article><span>Unidades disponibles</span><strong>{totalUnits.toLocaleString("es-HN")}</strong><small>en {groups.length} modelos y {products.length} variantes</small></article>
+        <article className={lowVariants ? "warning" : ""}><span>Variantes con poco stock</span><strong>{lowVariants.toLocaleString("es-HN")}</strong><small>en existencia, en o bajo su mínimo</small></article>
+        <article className={outVariants ? "danger" : ""}><span>Variantes agotadas</span><strong>{outVariants.toLocaleString("es-HN")}</strong><small>sin unidades disponibles</small></article>
+      </section>
+      <section className="inventory-insight-charts" aria-label="Gráficas de existencias">
+        <article className="inventory-insight-chart">
+          <div className="inventory-insight-chart-heading"><h4>Unidades por marca</h4><span>Top 8</span></div>
+          {brandStock.length ? <div className="inventory-chart-area"><ResponsiveContainer width="100%" height="100%"><BarChart data={brandStock.slice(0, 8)} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="name" width={96} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [`${Number(value).toLocaleString("es-HN")} unidades`, "Stock"]} /><Bar dataKey="units" fill="#1b8060" radius={[0, 5, 5, 0]} maxBarSize={22} /></BarChart></ResponsiveContainer></div> : <p className="inventory-chart-empty">Sin existencias para graficar.</p>}
+        </article>
+        <article className="inventory-insight-chart">
+          <div className="inventory-insight-chart-heading"><h4>Distribución por categoría</h4><span>{totalUnits.toLocaleString("es-HN")} unidades</span></div>
+          {categoryStock.length && totalUnits > 0 ? <div className="inventory-category-chart"><div className="inventory-chart-donut"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={categoryStock} dataKey="units" nameKey="name" innerRadius="62%" outerRadius="88%" paddingAngle={2} stroke="none">{categoryStock.map((entry, index) => <Cell key={entry.name} fill={categoryColors[index % categoryColors.length]} />)}</Pie><Tooltip formatter={(value) => [`${Number(value).toLocaleString("es-HN")} unidades`, "Stock"]} /></PieChart></ResponsiveContainer><div className="inventory-donut-total"><strong>{totalUnits.toLocaleString("es-HN")}</strong><span>unidades</span></div></div><div className="inventory-category-legend">{categoryStock.slice(0, 7).map((entry, index) => <div key={entry.name}><i style={{ background: categoryColors[index % categoryColors.length] }} /><span title={entry.name}>{entry.name}</span><strong>{entry.units.toLocaleString("es-HN")}</strong></div>)}{categoryStock.length > 7 && <small>+{categoryStock.length - 7} categorías más</small>}</div></div> : <p className="inventory-chart-empty">Sin existencias para graficar.</p>}
+        </article>
+      </section>
       <div className="inv-table-wrap">
         <table className="inv-table inventory-summary-table">
           <thead>
@@ -1189,6 +1210,16 @@ function InventorySummaryView({ products }: { products: Product[] }) {
       </div>
     </div>
   );
+}
+
+function aggregateStock(products: Product[], getName: (product: Product) => string) {
+  const totals = new Map<string, number>();
+  for (const product of products) {
+    const name = getName(product);
+    totals.set(name, (totals.get(name) ?? 0) + product.stock);
+  }
+  return Array.from(totals, ([name, units]) => ({ name, units }))
+    .sort((a, b) => b.units - a.units || a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
 }
 
 function OrdersView({

@@ -1929,6 +1929,54 @@ td:last-child {
   white-space: nowrap;
 }
 .inventory-summary-totals strong { color: var(--navy); }
+.inventory-insight-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.inventory-insight-cards article {
+  display: grid;
+  gap: 7px;
+  min-height: 104px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.inventory-insight-cards article > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.inventory-insight-cards article > strong { color: var(--navy); font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.inventory-insight-cards article > small { color: var(--muted); font-size: 11px; }
+.inventory-insight-cards article.warning { border-left: 3px solid #e3a32b; }
+.inventory-insight-cards article.danger { border-left: 3px solid #c74c42; }
+.inventory-insight-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: 14px;
+}
+.inventory-insight-chart {
+  min-width: 0;
+  min-height: 260px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.inventory-insight-chart-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.inventory-insight-chart-heading h4 { margin: 0; color: var(--navy); font-size: 14px; }
+.inventory-insight-chart-heading > span { color: var(--muted); font-size: 11px; }
+.inventory-chart-area { width: 100%; height: 204px; margin-top: 10px; }
+.inventory-chart-empty { display: grid; min-height: 204px; margin: 8px 0 0; place-items: center; color: var(--muted); font-size: 13px; }
+.inventory-category-chart { display: grid; grid-template-columns: minmax(150px, .95fr) minmax(150px, 1.05fr); align-items: center; gap: 14px; min-height: 214px; }
+.inventory-chart-donut { position: relative; width: 100%; height: 204px; }
+.inventory-donut-total { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+.inventory-donut-total strong { color: var(--navy); font-size: 21px; font-variant-numeric: tabular-nums; }
+.inventory-donut-total span { color: var(--muted); font-size: 10px; }
+.inventory-category-legend { display: grid; gap: 9px; min-width: 0; }
+.inventory-category-legend > div { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; font-size: 11px; }
+.inventory-category-legend i { width: 8px; height: 8px; border-radius: 50%; }
+.inventory-category-legend span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.inventory-category-legend strong { color: var(--navy); font-variant-numeric: tabular-nums; }
+.inventory-category-legend > small { color: var(--muted); font-size: 10px; }
 .inventory-summary-table { min-width: 820px; }
 .inventory-model-row { background: #fff; }
 .inventory-model-row > td { vertical-align: middle; }
@@ -6674,6 +6722,12 @@ td:last-child {
 
   .inventory-summary-table { min-width: 820px; }
   .inventory-summary-heading { align-items: flex-start; flex-direction: column; }
+  .inventory-insight-cards { grid-template-columns: 1fr; gap: 8px; }
+  .inventory-insight-cards article { min-height: 0; padding: 12px 14px; }
+  .inventory-insight-cards article > strong { font-size: 23px; }
+  .inventory-insight-charts { grid-template-columns: 1fr; gap: 10px; }
+  .inventory-insight-chart { min-height: 0; padding: 14px; }
+  .inventory-category-chart { grid-template-columns: minmax(125px, .9fr) minmax(120px, 1.1fr); gap: 8px; }
 
   .inv-table thead th,
   .diario-table th,
