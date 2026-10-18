@@ -245,8 +245,7 @@ export function App() {
       byLocation.set(row.product_id, map);
     }
 
-    setProducts(
-      (productRes.data ?? []).map((product) => {
+    const refreshedProducts: Product[] = (productRes.data ?? []).map((product) => {
         const discount = Number(product.discount_pct ?? 0);
         const priceFinal = Number((Number(product.sale_price) * (1 - discount / 100)).toFixed(2));
         return {
@@ -257,8 +256,13 @@ export function App() {
           discount_pct: discount,
           price_final: priceFinal,
         };
-      }),
-    );
+      });
+    setProducts(refreshedProducts);
+    const refreshedProductsById = new Map(refreshedProducts.map((product) => [product.id, product]));
+    setCart((current) => current.map((line) => {
+      const product = refreshedProductsById.get(line.id);
+      return product ? repriceCartLine(line, product) : line;
+    }));
     const packagingByLocation = new Map<string, Record<string, number>>();
     const packagingTotals = new Map<string, number>();
     for (const row of packagingStockRes.data ?? []) {
@@ -1106,6 +1110,25 @@ export function App() {
     await loadWorkspace();
   }
 
+  function effectiveProductSalePrice(product: Pick<Product, "sale_price" | "discount_pct">): number {
+    const price = Number(product.sale_price);
+    const discount = Number(product.discount_pct ?? 0);
+    return discount > 0 ? Number((price * (1 - discount / 100)).toFixed(2)) : price;
+  }
+
+  function repriceCartLine(line: CartLine, product: Product): CartLine {
+    return {
+      ...line,
+      ...product,
+      qty: line.qty,
+      base_price: Number(product.sale_price),
+      sale_price: effectiveProductSalePrice(product),
+      manual_discount_mode: line.manual_discount_mode,
+      manual_discount_pct: line.manual_discount_pct,
+      manual_discount_amount: line.manual_discount_amount,
+    };
+  }
+
   function addToCart(product: Product) {
     setCart((current) => {
       const existing = current.find((line) => line.id === product.id);
@@ -1113,8 +1136,8 @@ export function App() {
         // No permitir vender más de lo disponible aunque se pulse varias veces el mismo artículo.
         return current.map((line) => (line.id === product.id ? { ...line, qty: Math.min(line.qty + 1, line.stock) } : line));
       }
-      // Se vende al precio final (con descuento si el producto esta en oferta).
-      return [...current, { ...product, qty: 1, base_price: product.sale_price, sale_price: product.price_final ?? product.sale_price }];
+      // El carrito toma el precio vigente del catálogo y solo aplica una oferta activa.
+      return [...current, { ...product, qty: 1, base_price: Number(product.sale_price), sale_price: effectiveProductSalePrice(product) }];
     });
   }
 
@@ -1194,6 +1217,56 @@ export function App() {
     shippingBankReceived = false,
   ) {
     if (!supabase || cart.length === 0) return;
+    const { data: currentProductPrices, error: priceCheckError } = await supabase
+      .from("products")
+      .select("id, sale_price, discount_pct, active")
+      .in("id", cart.map((line) => line.id));
+    if (priceCheckError) {
+      setNotice("No se pudo verificar el precio vigente de los productos. La venta no se registró; intenta de nuevo.");
+      return;
+    }
+    const currentPricesById = new Map((currentProductPrices ?? []).map((product: any) => [product.id, product]));
+    const unavailableProducts = cart.filter((line) => {
+      const product = currentPricesById.get(line.id) as any;
+      return !product || !product.active;
+    });
+    if (unavailableProducts.length > 0) {
+      setNotice(`No se registró la venta: ${unavailableProducts.map((line) => line.name).join(", ")} ya no está disponible en Inventario.`);
+      return;
+    }
+    const changedPriceLines = cart.filter((line) => {
+      const product = currentPricesById.get(line.id) as any;
+      const catalogPrice = Number(product.sale_price);
+      const discount = Number(product.discount_pct ?? 0);
+      const finalPrice = effectiveProductSalePrice({ sale_price: catalogPrice, discount_pct: discount });
+      return Math.abs(Number(line.base_price ?? line.sale_price) - catalogPrice) > 0.009 ||
+        Math.abs(Number(line.sale_price) - finalPrice) > 0.009 ||
+        Number(line.discount_pct ?? 0) !== discount;
+    });
+    if (changedPriceLines.length > 0) {
+      const latestCatalog = new Map<string, Product>();
+      for (const line of cart) {
+        const latest = currentPricesById.get(line.id) as any;
+        if (!latest) continue;
+        const salePrice = Number(latest.sale_price);
+        const discountPct = Number(latest.discount_pct ?? 0);
+        const existingProduct = products.find((product) => product.id === line.id) ?? line;
+        latestCatalog.set(line.id, {
+          ...existingProduct,
+          price: salePrice,
+          sale_price: salePrice,
+          discount_pct: discountPct,
+          price_final: effectiveProductSalePrice({ sale_price: salePrice, discount_pct: discountPct }),
+        });
+      }
+      setProducts((current) => current.map((product) => latestCatalog.get(product.id) ?? product));
+      setCart((current) => current.map((line) => {
+        const product = latestCatalog.get(line.id);
+        return product ? repriceCartLine(line, product) : line;
+      }));
+      setNotice(`El precio de ${changedPriceLines.map((line) => line.name).join(", ")} cambió en Inventario. Actualicé el carrito; revisa el total y vuelve a cobrar.`);
+      return;
+    }
     if(shippingUsage.length && (!shippingBankReceived || shippingUsage.some(u=>!Number.isInteger(u.quantity) || u.quantity<=0 || !shippingGuides.some(g=>g.id===u.guide_id && g.stock>=u.quantity && g.price===u.unit_price)))) {
       setNotice("Revisa las existencias de guías y confirma su cobro en Banco.");return;
     }
