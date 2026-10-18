@@ -1,5 +1,5 @@
-import { ArrowUp, Pencil, Plus, Save, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Plus, Save, Search, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import type { Account, AccountType, CashMovement, JournalEntryFull } from "../types";
 import { ACCOUNT_TYPE_LABEL } from "../types";
 import { lps, shortDate } from "../lib/format";
@@ -95,16 +95,8 @@ export function Accounting({
   const [savedEntryId, setSavedEntryId] = useState<string | null>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [manualEntry, setManualEntry] = useState<ManualJournalDraft>(emptyManualJournal);
-  const [showScrollToTop, setShowScrollToTop] = useState(false);
   const nextManualLineId = useRef(2);
   const manualAccountListId = useRef(`manual-journal-account-options-${Math.random().toString(36).slice(2)}`);
-
-  useEffect(() => {
-    const updateScrollButton = () => setShowScrollToTop(window.scrollY > 320);
-    updateScrollButton();
-    window.addEventListener("scroll", updateScrollButton, { passive: true });
-    return () => window.removeEventListener("scroll", updateScrollButton);
-  }, []);
 
   // Cuentas de pago (donde entra/sale la plata): caja y banco.
   const payAccounts = useMemo(
@@ -646,17 +638,6 @@ export function Accounting({
             </div>
           </aside>
         </div>
-      )}
-      {showScrollToTop && (
-        <button
-          type="button"
-          className="accounting-scroll-top"
-          onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}
-          aria-label="Volver arriba"
-          title="Volver arriba"
-        >
-          <ArrowUp size={20} />
-        </button>
       )}
     </section>
   );

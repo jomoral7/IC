@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  ArrowUp,
   Boxes,
   ClipboardList,
   Download,
@@ -74,6 +75,8 @@ const ROLE_PERMISSIONS: Record<string, ModuleName[]> = {
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const scrolledContainers = useRef<Set<HTMLElement>>(new Set());
   const [selectedModule, setSelectedModule] = useState<ModuleName>("Dashboard");
   const [viewedSellerId, setViewedSellerId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -100,6 +103,24 @@ export function App() {
   const [packagingRequests, setPackagingRequests] = useState<PackagingStockRequest[]>([]);
   const [shippingGuides,setShippingGuides] = useState<ShippingGuide[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
+
+  useEffect(() => {
+    const updateScrollButton = (event?: Event) => {
+      const target = event?.target;
+      if (target instanceof HTMLElement && target !== document.documentElement) {
+        if (target.scrollTop > 320) scrolledContainers.current.add(target);
+        else scrolledContainers.current.delete(target);
+      }
+      scrolledContainers.current.forEach((element) => {
+        if (!element.isConnected) scrolledContainers.current.delete(element);
+      });
+      const shouldShow = window.scrollY > 320 || scrolledContainers.current.size > 0;
+      setShowScrollToTop((current) => current === shouldShow ? current : shouldShow);
+    };
+    updateScrollButton();
+    window.addEventListener("scroll", updateScrollButton, { capture: true, passive: true });
+    return () => window.removeEventListener("scroll", updateScrollButton, true);
+  }, []);
   const query = "";
   const [notice, setNotice] = useState("");
   const [productSaveFeedback, setProductSaveFeedback] = useState<{ message: string; tone: "success" | "error" } | null>(null);
@@ -2452,6 +2473,23 @@ export function App() {
           />
         )}
       </main>
+      {showScrollToTop && (
+        <button
+          type="button"
+          className="scroll-top-button"
+          onClick={() => {
+            const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+            window.scrollTo({ top: 0, behavior });
+            scrolledContainers.current.forEach((element) => {
+              element.scrollTo({ top: 0, behavior });
+            });
+          }}
+          aria-label="Volver arriba"
+          title="Volver arriba"
+        >
+          <ArrowUp size={20} />
+        </button>
+      )}
       {detailDoc && (
         <InvoiceDetailModal
           doc={detailDoc}

@@ -4845,10 +4845,10 @@ td:last-child {
   flex-direction: column;
   gap: 14px;
 }
-.accounting-scroll-top {
+.scroll-top-button {
   position: fixed;
-  right: 28px;
-  bottom: 28px;
+  right: 18px;
+  bottom: 18px;
   z-index: 25;
   display: inline-flex;
   align-items: center;
@@ -4861,8 +4861,8 @@ td:last-child {
   background: var(--navy);
   box-shadow: 0 4px 14px rgb(11 37 51 / 22%);
 }
-.accounting-scroll-top:hover { background: var(--ink); }
-.accounting-scroll-top:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
+.scroll-top-button:hover { background: var(--ink); }
+.scroll-top-button:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 .diario-entry {
   border: 1px solid var(--line);
   border-radius: 12px;
