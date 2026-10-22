@@ -1,6 +1,6 @@
-import { FileText, Search, X } from "lucide-react";
+import { FileText, Search } from "lucide-react";
 import { useState } from "react";
-import type { BonusPayment, CashCollectionMethod, Commission, Seller, SellerGoal } from "../types";
+import type { BonusPayment, Commission, Seller, SellerGoal } from "../types";
 import { lps, shortDate } from "../lib/format";
 import { EmptyWork } from "../ui";
 
@@ -32,7 +32,6 @@ export function MySales({
   sellerOptions,
   selectedSellerId,
   onSelectSeller,
-  onCollectCredit,
 }: {
   sellerName: string | null;
   commissions: Commission[];
@@ -42,13 +41,8 @@ export function MySales({
   sellerOptions?: Seller[];
   selectedSellerId?: string;
   onSelectSeller?: (sellerId: string) => void;
-  onCollectCredit?: (documentId: string, amount: number, method: CashCollectionMethod) => Promise<boolean>;
 }) {
   const [tab, setTab] = useState<"pending" | "hold" | "paid">("pending");
-  const [collecting, setCollecting] = useState<Commission | null>(null);
-  const [collectAmount, setCollectAmount] = useState("");
-  const [collectMethod, setCollectMethod] = useState<CashCollectionMethod>("bank_transfer");
-  const [savingCollection, setSavingCollection] = useState(false);
 
   if (!sellerName) {
     return (
@@ -217,16 +211,9 @@ export function MySales({
                   {c.status === "hold" && c.doc?.payment_terms === "credit" && <small>Saldo de factura: {lps(Math.max(0, c.doc.total - c.doc.paid_amount))}</small>}
                 </div>
                 <div className="commission-actions">
-                  <button className="mini-button" title="Ver detalle y comision" onClick={() => onOpenInvoice(c.document_id)}>
-                    <FileText size={14} /> Ver detalle
+                  <button className="mini-button" title={c.status === "hold" && c.doc?.payment_terms === "credit" ? "Revisar factura y registrar cobro" : "Ver detalle y comision"} onClick={() => onOpenInvoice(c.document_id)}>
+                    <FileText size={14} /> {c.status === "hold" && c.doc?.payment_terms === "credit" ? "Revisar y cobrar" : "Ver detalle"}
                   </button>
-                  {c.status === "hold" && c.doc?.payment_terms === "credit" && !c.doc.voided_at && onCollectCredit && (
-                    <button className="mini-button" onClick={() => {
-                      setCollecting(c);
-                      setCollectAmount(String(Math.max(0, c.doc!.total - c.doc!.paid_amount).toFixed(2)));
-                      setCollectMethod("bank_transfer");
-                    }}>Registrar cobro</button>
-                  )}
                   {c.status === "paid" && <span className="stock-badge ok">Pagada</span>}
                 </div>
               </div>
@@ -237,25 +224,6 @@ export function MySales({
       <p className="mini-note" style={{ marginTop: 10 }}>
         <Search size={12} /> La comision y el bono se calculan sobre la venta neta, despues de descuentos.
       </p>
-      {collecting && collecting.doc && onCollectCredit && (
-        <div className="drawer-backdrop" onClick={() => !savingCollection && setCollecting(null)}>
-          <div className="invoice-modal credit-collection-modal" role="dialog" aria-modal="true" aria-label={`Registrar cobro de factura ${collecting.doc.document_number}`} onClick={(event) => event.stopPropagation()}>
-            <div className="invoice-modal-head"><div><p className="section-label">Cobro de crédito</p><h2>Factura #{collecting.doc.document_number}</h2></div><button className="icon-button" aria-label="Cerrar" onClick={() => !savingCollection && setCollecting(null)}><X size={16} /></button></div>
-            <p className="mini-note">{collecting.doc.customer_name ?? "Cliente"} · Saldo pendiente {lps(Math.max(0, collecting.doc.total - collecting.doc.paid_amount))}</p>
-            <div className="credit-collection-fields">
-              <label>Monto recibido<div className="money-input"><b>L</b><input type="number" min="0.01" max={collecting.doc.total - collecting.doc.paid_amount} step="0.01" value={collectAmount} onChange={(event) => setCollectAmount(event.target.value)} /></div></label>
-              <label>Recibido en<select value={collectMethod} onChange={(event) => setCollectMethod(event.target.value as CashCollectionMethod)}><option value="cash">Caja</option><option value="bank_deposit">Banco · depósito</option><option value="bank_transfer">Banco · transferencia</option></select></label>
-            </div>
-            <p className="mini-note">Se actualizarán el saldo de la factura y el asiento de Cuentas por cobrar contra {collectMethod === "cash" ? "Caja" : "Banco"}.</p>
-            <div className="invoice-actions"><button className="secondary-button" disabled={savingCollection} onClick={() => setCollecting(null)}>Cancelar</button><button className="primary-button" disabled={savingCollection || !Number.isFinite(Number(collectAmount)) || Number(collectAmount) <= 0 || Number(collectAmount) > collecting.doc.total - collecting.doc.paid_amount} onClick={async () => {
-              setSavingCollection(true);
-              const saved = await onCollectCredit(collecting.document_id, Number(collectAmount), collectMethod);
-              setSavingCollection(false);
-              if (saved) setCollecting(null);
-            }}>{savingCollection ? "Guardando..." : "Registrar pago"}</button></div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

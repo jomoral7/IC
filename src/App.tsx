@@ -2467,7 +2467,6 @@ export function App() {
                 goals={viewedSeller ? goals.filter((g) => g.seller_id === viewedSeller.id && g.active) : []}
                 bonusPayments={viewedSeller ? bonusPayments.filter((b) => b.seller_id === viewedSeller.id) : []}
                 onOpenInvoice={(id) => void openInvoiceById(id)}
-                onCollectCredit={collectCreditPayment}
                 sellerOptions={canViewAllSellers ? sellers : undefined}
                 selectedSellerId={viewedSeller?.id}
                 onSelectSeller={canViewAllSellers ? setViewedSellerId : undefined}
