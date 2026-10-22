@@ -1,6 +1,6 @@
-import { Ban, Minus, Pencil, Plus, Printer, Save, Search, Trash2, UserRound, X } from "lucide-react";
+import { Ban, Minus, Pencil, Plus, Printer, Save, Search, Trash2, UserRound, X, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { Product, Seller } from "../types";
+import type { CashCollectionMethod, Product, Seller } from "../types";
 import { lps, shortDate } from "../lib/format";
 import { EmptyWork } from "../ui";
 
@@ -38,6 +38,7 @@ export function InvoiceDetailModal({
   commissionInfo,
   sellerOptions,
   onAssignSeller,
+  onCollectCredit,
   onDownload,
   onVoid,
   onSaveEdit,
@@ -49,6 +50,7 @@ export function InvoiceDetailModal({
   commissionInfo: { sellerId?: string; sellerName: string | null; amount: number } | null;
   sellerOptions?: Seller[];
   onAssignSeller?: (sellerId: string) => Promise<boolean>;
+  onCollectCredit?: (documentId: string, amount: number, method: CashCollectionMethod) => Promise<boolean>;
   onClose: () => void;
   onDownload: (doc: any) => Promise<void>;
   onVoid: (doc: any, reason: string) => Promise<void>;
@@ -64,6 +66,9 @@ export function InvoiceDetailModal({
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [sellerId, setSellerId] = useState(commissionInfo?.sellerId ?? "");
+  const [collecting, setCollecting] = useState(false);
+  const [collectAmount, setCollectAmount] = useState("");
+  const [collectMethod, setCollectMethod] = useState<CashCollectionMethod>("bank_transfer");
   useEffect(() => setSellerId(commissionInfo?.sellerId ?? ""), [commissionInfo?.sellerId]);
 
   const editSubtotal = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
@@ -72,6 +77,9 @@ export function InvoiceDetailModal({
   const total = editTaxable + editTax;
   const viewTotal = items.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const itemDiscountTotal = items.reduce((sum, item) => sum + itemDiscount(item), 0);
+  const invoiceTotal = Number(doc.total ?? 0) + Number(doc.shipping_total ?? 0);
+  const paidAmount = Number(doc.paid_amount ?? 0);
+  const balance = Math.max(0, invoiceTotal - paidAmount);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -156,9 +164,39 @@ export function InvoiceDetailModal({
           </div>
           <div>
             <span>Total facturado</span>
-            <strong className="big">{lps(Number(doc.total)+Number(doc.shipping_total ?? 0))}</strong>
+            <strong className="big">{lps(invoiceTotal)}</strong>
           </div>
+          {doc.kind === "sale" && doc.payment_terms === "credit" && <>
+            <div><span>Abonado</span><strong>{lps(paidAmount)}</strong></div>
+            <div><span>Saldo pendiente</span><strong className="big">{lps(balance)}</strong></div>
+          </>}
         </div>
+
+        {doc.kind === "sale" && doc.payment_terms === "credit" && !voided && onCollectCredit && balance > 0.009 && (
+          <div className="invoice-credit-collection">
+            {!collecting ? (
+              <button className="primary-button" onClick={() => { setCollectAmount(balance.toFixed(2)); setCollectMethod("bank_transfer"); setCollecting(true); }}>
+                <Wallet size={16} /> Registrar cobro
+              </button>
+            ) : <>
+              <div className="credit-collection-fields">
+                <label>Monto recibido<div className="money-input"><b>L</b><input type="number" min="0.01" max={balance} step="0.01" value={collectAmount} onChange={(event) => setCollectAmount(event.target.value)} /></div></label>
+                <label>Recibido en<select value={collectMethod} onChange={(event) => setCollectMethod(event.target.value as CashCollectionMethod)}><option value="cash">Caja</option><option value="bank_deposit">Banco · depósito</option><option value="bank_transfer">Banco · transferencia</option></select></label>
+              </div>
+              <p className="mini-note">El cobro actualizará el saldo y el asiento de Cuentas por cobrar contra {collectMethod === "cash" ? "Caja" : "Banco"}.</p>
+              <div className="invoice-actions"><button className="secondary-button" disabled={busy} onClick={() => setCollecting(false)}>Cancelar</button><button className="primary-button" disabled={busy || !Number.isFinite(Number(collectAmount)) || Number(collectAmount) <= 0 || Number(collectAmount) > balance} onClick={async () => {
+                setBusy(true);
+                const amount = Number(collectAmount);
+                const saved = await onCollectCredit(doc.id, amount, collectMethod);
+                setBusy(false);
+                if (saved) {
+                  doc.paid_amount = paidAmount + amount;
+                  setCollecting(false);
+                }
+              }}><Wallet size={16} /> {busy ? "Guardando..." : "Registrar pago"}</button></div>
+            </>}
+          </div>
+        )}
 
         {Number(doc.shipping_total ?? 0)>0 && <div className="shipping-invoice-summary"><span>{voided ? "Guías de envío · cobro anulado" : "Guías de envío · cobradas en Banco"}</span><strong>{lps(Number(doc.shipping_total))}</strong><small>Importe separado de la mercadería y de la comisión del vendedor.</small></div>}
         {voided && <div className="void-banner">Factura ANULADA{doc.void_reason ? ` — ${doc.void_reason}` : ""}</div>}

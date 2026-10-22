@@ -2540,6 +2540,7 @@ export function App() {
           commissionInfo={detailCommission}
           sellerOptions={currentRole === "admin" || currentRole === "manager" ? sellers.filter((seller) => seller.active) : undefined}
           onAssignSeller={(sellerId) => assignInvoiceSeller(detailDoc, sellerId)}
+          onCollectCredit={collectCreditPayment}
           onClose={() => setDetailDoc(null)}
           onDownload={(d) => downloadInvoice(d, false, true)}
           onVoid={voidInvoice}
