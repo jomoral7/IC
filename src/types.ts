@@ -39,6 +39,10 @@ export type Commission = {
     subtotal: number;
     discount: number;
     total: number;
+    paid_amount: number;
+    payment_terms: "cash" | "credit";
+    status: string;
+    voided_at: string | null;
     created_at: string;
     items: Array<{ discount: number }>;
   } | null;

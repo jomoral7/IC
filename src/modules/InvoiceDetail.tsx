@@ -1,6 +1,6 @@
-import { Ban, Minus, Pencil, Plus, Printer, Save, Search, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { Product } from "../types";
+import { Ban, Minus, Pencil, Plus, Printer, Save, Search, Trash2, UserRound, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { Product, Seller } from "../types";
 import { lps, shortDate } from "../lib/format";
 import { EmptyWork } from "../ui";
 
@@ -36,6 +36,8 @@ export function InvoiceDetailModal({
   products,
   onClose,
   commissionInfo,
+  sellerOptions,
+  onAssignSeller,
   onDownload,
   onVoid,
   onSaveEdit,
@@ -44,7 +46,9 @@ export function InvoiceDetailModal({
   doc: any;
   items: InvoiceItem[];
   products: Product[];
-  commissionInfo: { sellerName: string | null; amount: number } | null;
+  commissionInfo: { sellerId?: string; sellerName: string | null; amount: number } | null;
+  sellerOptions?: Seller[];
+  onAssignSeller?: (sellerId: string) => Promise<boolean>;
   onClose: () => void;
   onDownload: (doc: any) => Promise<void>;
   onVoid: (doc: any, reason: string) => Promise<void>;
@@ -59,6 +63,8 @@ export function InvoiceDetailModal({
   const [reason, setReason] = useState("");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sellerId, setSellerId] = useState(commissionInfo?.sellerId ?? "");
+  useEffect(() => setSellerId(commissionInfo?.sellerId ?? ""), [commissionInfo?.sellerId]);
 
   const editSubtotal = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const editTaxable = Math.max(0, editSubtotal - Math.min(editSubtotal, Math.max(0, ticketDiscount)));
@@ -170,6 +176,30 @@ export function InvoiceDetailModal({
                 <strong>{lps(commissionInfo.amount)}</strong>
               </div>
             </div>
+          </div>
+        )}
+
+        {sellerOptions && onAssignSeller && !voided && doc.kind === "sale" && (
+          <div className="internal-box invoice-seller-assignment">
+            <span className="internal-tag">Asignación interna de vendedor</span>
+            <div className="invoice-seller-assignment-row">
+              <label>
+                Vendedor de esta factura
+                <select value={sellerId} onChange={(event) => setSellerId(event.target.value)}>
+                  <option value="">Selecciona un vendedor</option>
+                  {sellerOptions.map((seller) => <option key={seller.id} value={seller.id}>{seller.name} · {Math.round(seller.commission_rate * 100)}%</option>)}
+                </select>
+              </label>
+              <button className="secondary-button" disabled={!sellerId || busy || sellerId === commissionInfo?.sellerId} onClick={async () => {
+                setBusy(true);
+                const saved = await onAssignSeller(sellerId);
+                setBusy(false);
+                if (saved) setSellerId(sellerId);
+              }}>
+                <UserRound size={15} /> {busy ? "Guardando..." : commissionInfo ? "Actualizar vendedor" : "Asignar vendedor"}
+              </button>
+            </div>
+            <small>Se calcula la comisión con la tasa actual del vendedor y queda en espera si la factura sigue a crédito.</small>
           </div>
         )}
 

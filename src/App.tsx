@@ -126,7 +126,7 @@ export function App() {
   const [productSaveFeedback, setProductSaveFeedback] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [detailDoc, setDetailDoc] = useState<any | null>(null);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
-  const [detailCommission, setDetailCommission] = useState<{ sellerName: string | null; amount: number } | null>(null);
+  const [detailCommission, setDetailCommission] = useState<{ sellerId?: string; sellerName: string | null; amount: number } | null>(null);
   const loadedWorkspaceFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -222,7 +222,7 @@ export function App() {
         supabase.from("stock_requests").select("id, product_id, requested_quantity, received_quantity, status, supplier_id, requested_at, received_at, notes"),
         supabase
           .from("seller_commissions")
-          .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, subtotal, discount, total, created_at, document_items(discount))")
+          .select("id, seller_id, document_id, base_amount, commission_amount, status, created_at, documents(document_number, customer_name, subtotal, discount, total, paid_amount, payment_terms, status, voided_at, created_at, parties(name), document_items(discount))")
           .order("created_at", { ascending: false }),
         supabase.from("seller_goals").select("*").order("min_sales"),
         supabase.from("seller_bonus_payments").select("id, seller_id, goal_id, period, sales, bonus, status"),
@@ -326,10 +326,14 @@ export function App() {
         doc: c.documents
           ? {
               document_number: c.documents.document_number,
-              customer_name: c.documents.customer_name ?? null,
+              customer_name: c.documents.customer_name ?? c.documents.parties?.name ?? null,
               subtotal: Number(c.documents.subtotal ?? c.base_amount),
               discount: Number(c.documents.discount ?? 0),
               total: Number(c.documents.total),
+              paid_amount: Number(c.documents.paid_amount ?? 0),
+              payment_terms: c.documents.payment_terms ?? "cash",
+              status: c.documents.status ?? "issued",
+              voided_at: c.documents.voided_at ?? null,
               created_at: c.documents.created_at,
               items: (c.documents.document_items ?? []).map((item: any) => ({
                 discount: Number(item.discount ?? 0),
@@ -825,6 +829,43 @@ export function App() {
       return;
     }
     await openInvoiceDetail(data);
+  }
+
+  async function assignInvoiceSeller(doc: any, sellerId: string) {
+    if (!supabase || !sellerId) return false;
+    const { error } = await supabase.rpc("assign_invoice_seller", {
+      p_document_id: doc.id,
+      p_seller_id: sellerId,
+    });
+    if (error) {
+      setNotice(error.message);
+      return false;
+    }
+    const seller = sellers.find((entry) => entry.id === sellerId);
+    const base = Math.max(0, Number(doc.subtotal ?? doc.total) - Number(doc.discount ?? 0));
+    setDetailCommission({ sellerId, sellerName: seller?.name ?? null, amount: Number((base * Number(seller?.commission_rate ?? 0)).toFixed(2)) });
+    setNotice(`Vendedor ${seller?.name ?? "asignado"} vinculado a la factura #${doc.document_number}`);
+    await logAudit("Asignar vendedor a factura", `Factura ${doc.document_number} · ${seller?.name ?? sellerId}`);
+    await loadWorkspace();
+    return true;
+  }
+
+  async function collectCreditPayment(documentId: string, amount: number, method: CashCollectionMethod) {
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("collect_credit_payment", {
+      p_document_id: documentId,
+      p_amount: amount,
+      p_method: method,
+    });
+    if (error) {
+      setNotice(error.message);
+      return false;
+    }
+    const doc = documents.find((entry) => entry.id === documentId);
+    await logAudit("Cobrar factura a crédito", `Factura ${doc?.document_number ?? documentId} · L ${amount.toLocaleString("es-HN", { minimumFractionDigits: 2 })} · ${method === "cash" ? "Caja" : "Banco"}`);
+    setNotice("Cobro registrado y saldo contable actualizado");
+    await loadWorkspace();
+    return true;
   }
 
   async function deleteProduct(product: Product) {
@@ -1882,11 +1923,11 @@ export function App() {
     }));
     const { data: comm } = await supabase
       .from("seller_commissions")
-      .select("commission_amount, sellers(name)")
+      .select("seller_id, commission_amount, sellers(name)")
       .eq("document_id", doc.id)
       .maybeSingle();
     setDetailCommission(
-      comm ? { sellerName: (comm as any).sellers?.name ?? null, amount: Number((comm as any).commission_amount ?? 0) } : null,
+      comm ? { sellerId: (comm as any).seller_id, sellerName: (comm as any).sellers?.name ?? null, amount: Number((comm as any).commission_amount ?? 0) } : null,
     );
     setDetailItems(mapped);
     setDetailDoc(doc);
@@ -2426,6 +2467,7 @@ export function App() {
                 goals={viewedSeller ? goals.filter((g) => g.seller_id === viewedSeller.id && g.active) : []}
                 bonusPayments={viewedSeller ? bonusPayments.filter((b) => b.seller_id === viewedSeller.id) : []}
                 onOpenInvoice={(id) => void openInvoiceById(id)}
+                onCollectCredit={collectCreditPayment}
                 sellerOptions={canViewAllSellers ? sellers : undefined}
                 selectedSellerId={viewedSeller?.id}
                 onSelectSeller={canViewAllSellers ? setViewedSellerId : undefined}
@@ -2496,6 +2538,8 @@ export function App() {
           items={detailItems}
           products={products}
           commissionInfo={detailCommission}
+          sellerOptions={currentRole === "admin" || currentRole === "manager" ? sellers.filter((seller) => seller.active) : undefined}
+          onAssignSeller={(sellerId) => assignInvoiceSeller(detailDoc, sellerId)}
           onClose={() => setDetailDoc(null)}
           onDownload={(d) => downloadInvoice(d, false, true)}
           onVoid={voidInvoice}

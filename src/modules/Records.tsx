@@ -14,10 +14,24 @@ export function Invoices({
   onOpen: (doc: any) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "pending" | "cash" | "credit">("all");
   const q = query.trim().toLowerCase();
-  const filtered = q
-    ? documents.filter((d) => [d.document_number, d.customer_name].filter(Boolean).join(" ").toLowerCase().includes(q))
-    : documents;
+  const invoices = documents.filter((doc) => doc.kind === "sale");
+  const searched = q
+    ? invoices.filter((d) => [d.document_number, d.customer_name].filter(Boolean).join(" ").toLowerCase().includes(q))
+    : invoices;
+  const openBalance = (doc: any) => Math.max(0, Number(doc.total ?? 0) + Number(doc.shipping_total ?? 0) - Number(doc.paid_amount ?? 0));
+  const counts = {
+    all: searched.length,
+    pending: searched.filter((doc) => !doc.voided_at && openBalance(doc) > 0.009).length,
+    cash: searched.filter((doc) => doc.payment_terms === "cash").length,
+    credit: searched.filter((doc) => doc.payment_terms === "credit").length,
+  };
+  const filtered = searched.filter((doc) => {
+    if (paymentFilter === "pending") return !doc.voided_at && openBalance(doc) > 0.009;
+    if (paymentFilter === "cash" || paymentFilter === "credit") return doc.payment_terms === paymentFilter;
+    return true;
+  });
   return (
     <section className="panel full-panel">
       <div className="panel-heading">
@@ -30,7 +44,13 @@ export function Invoices({
         <Search size={16} />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar factura por numero (del QR) o cliente" />
       </div>
-      <p className="mini-note">{filtered.length} {filtered.length === 1 ? "factura en la lista" : "facturas en la lista"}</p>
+      <div className="invoice-payment-filters" role="tablist" aria-label="Filtrar facturas por estado de pago">
+        <button type="button" role="tab" aria-selected={paymentFilter === "all"} className={paymentFilter === "all" ? "active" : ""} onClick={() => setPaymentFilter("all")}>Todas <strong>{counts.all}</strong></button>
+        <button type="button" role="tab" aria-selected={paymentFilter === "pending"} className={paymentFilter === "pending" ? "active" : ""} onClick={() => setPaymentFilter("pending")}>Pendientes <strong>{counts.pending}</strong></button>
+        <button type="button" role="tab" aria-selected={paymentFilter === "cash"} className={paymentFilter === "cash" ? "active" : ""} onClick={() => setPaymentFilter("cash")}>Contado <strong>{counts.cash}</strong></button>
+        <button type="button" role="tab" aria-selected={paymentFilter === "credit"} className={paymentFilter === "credit" ? "active" : ""} onClick={() => setPaymentFilter("credit")}>Crédito <strong>{counts.credit}</strong></button>
+      </div>
+      <p className="mini-note">{filtered.length} {filtered.length === 1 ? "factura en la lista" : "facturas en la lista"}{paymentFilter === "pending" ? " · saldo pendiente de cobro" : paymentFilter === "credit" ? " · facturas registradas a crédito" : paymentFilter === "cash" ? " · facturas registradas al contado" : ""}</p>
       {filtered.length === 0 ? (
         <EmptyWork title="Sin facturas" text="Las ventas emitidas desde POS apareceran aqui." />
       ) : (
